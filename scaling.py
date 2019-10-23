@@ -29,27 +29,30 @@ def NaN_Imputation(Spectra, minsample=0):
 
 
 # Function to do Pareto Scaling, it accomodates Missing Values.
-# It is a bit inneficient (last 'for' can be incorporated in the one before if it doesn't accomodate Missing Values)
+# Function changed, if it causes errors, needs to be reverted.
 def ParetoScal(Spectra):
-    """Performs Pareto Scaling on an AlignedSpectra object"""
+    """Performs Pareto Scaling on an AlignedSpectra object
+
+       Requires: An Aligned Spectra object. It can include missing values, however the presence of these will slow down
+       the function considerably
+       Returns: Pareto Scaled Aligned Spectra Object"""
 
     scaled_aligned = Spectra.data.copy()
     for j in range(0, Spectra.sample_count):
         std = Spectra.sample(j).data.std()[0]
         sqstd = std**(0.5)
         values = Spectra.sample(j).data
-        scaled = []
         # Apply Pareto Scaling to each value
-        for i in range(0, len(Spectra.sample(j))):
-            scaled.append((values.iloc[i, 0] - values.mean()[0])/sqstd)
+        values = (values - values.mean()[0])/sqstd
         # Replace not null values by the scaled values
-        if len(scaled) == len(scaled_aligned):
-            scaled_aligned.iloc[:, j] = scaled
+        if len(values) == len(scaled_aligned):
+            scaled_aligned.iloc[:, j] = values
         else:
             a = 0
             for i in range(0, len(scaled_aligned)):
                 if scaled_aligned.notnull().iloc[i, ].at[values.columns[0]]:
-                    scaled_aligned.iloc[i, ].at[values.columns[0]] = scaled[a]
+                    scaled_aligned.iloc[i,
+                                        ].at[values.columns[0]] = values.iloc[a, 0]
                     a = a + 1
 
     # Return scaled spectra
