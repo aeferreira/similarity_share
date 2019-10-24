@@ -6,7 +6,7 @@ from metabolinks import AlignedSpectra
 
 def NaN_Imputation(Spectra, minsample=0):
     """Remove features with too many missing values (0 < minsample < 1 = % of samples where the feature must be present)
-       Replace missing values by half of the minimum intensity of the original data in that sample
+       Replace missing values by half of the minimum intensity of the original data
 
        Requires: minsample between 0 and 1"""
 
@@ -21,10 +21,12 @@ def NaN_Imputation(Spectra, minsample=0):
                 df = df.drop([df.iloc[a].name])
             else:
                 a = a + 1
+
     Imputated = AlignedSpectra(
         df, sample_names=Imputated.sample_names, labels=Imputated.labels)
     # Replace missing values
-    Imputated.data.fillna(Imputated.data.min()/2, inplace=True)
+    Imputated.data.fillna(min(Imputated.data.min()/2), inplace=True)
+
     return Imputated
 
 
