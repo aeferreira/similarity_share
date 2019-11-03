@@ -75,27 +75,25 @@ def glog(Spectra, lamb=0):
 def ParetoScal(Spectra):
     """Performs Pareto Scaling on an AlignedSpectra object.
 
-       Spectra: Aligned Spectra object (from metabolinks). It can include missing values (however these will slow down the 
-       function considerably).
+       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
 
        Returns: Aligned Spectra object (from metabolinks); Pareto Scaled Spectra."""
 
     scaled_aligned = Spectra.data.copy()
-    for j in range(0, Spectra.sample_count):
-        std = Spectra.sample(Spectra.data.columns[j]).data.std()[0]
+    for j in range(0, len(scaled_aligned)):
+        std = Spectra.data.iloc[j, ].std()
         sqstd = std**(0.5)
-        values = Spectra.sample(Spectra.data.columns[j]).data
+        values = Spectra.data.iloc[j, ]
         # Apply Pareto Scaling to each value
-        values = (values - values.mean()[0])/sqstd
+        values = (values - values.mean())/sqstd
         # Replace not null values by the scaled values
-        if len(values) == len(scaled_aligned):
-            scaled_aligned.iloc[:, j] = values
+        if len(values) == Spectra.sample_count:
+            scaled_aligned.iloc[j, :] = values
         else:
             a = 0
-            for i in range(0, len(scaled_aligned)):
-                if scaled_aligned.notnull().iloc[i, ].at[values.columns[0]]:
-                    scaled_aligned.iloc[i,
-                                        ].at[values.columns[0]] = values.iloc[a, 0]
+            for i in range(0, len(Spectra.sample_count)):
+                if scaled_aligned.notnull().iloc[j, i]:
+                    scaled_aligned.iloc[j, i] = values.iloc[a, 0]
                     a = a + 1
 
     # Return scaled spectra
