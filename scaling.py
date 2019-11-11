@@ -103,10 +103,10 @@ def ParetoScal(Spectra):
 def search_for_ref_feat(Spectra, approx_mass):
     """Estimates a peak m/z to be the reference feature. 
 
-       Spectra = AlignedSpectra object (from metabolinks).
-       approx_mass = scalar, approximate mass of the reference feature to search for
+       Spectra: AlignedSpectra object (from metabolinks).
+       approx_mass: scalar, approximate mass of the reference feature to search for.
 
-       Return: scalar, scalar; peak m/z that is estiamted to belong to the reference feature (must be present in all samples,
+       Return: scalar, scalar; peak m/z that is estimated to belong to the reference feature (must be present in all samples,
     must be at a max length of 1 m/z of the approximate mass given) - the scalar returned is the closest peak that fulfills 
     these two conditios; m/z difference of approximate m/z and estimated m/z.
     """
@@ -124,6 +124,7 @@ def search_for_ref_feat(Spectra, approx_mass):
         return feat_est[0], abs(feat_est[0] - approx_mass)
 
     elif len(feat_est) == 0:
+        #raise ValueError ('No feature is present in all sample around approx_mass.')
         return print('Error - No feature is present in all sample around approx_mass')
 
     # Tiebraker: Be closer to the approximate mass (m/z) given than other peaks that fulfill previous conditions.
@@ -133,3 +134,62 @@ def search_for_ref_feat(Spectra, approx_mass):
             mass_diff.append(abs(feat_est[i]-approx_mass))
 
         return feat_est[mass_diff.index(min(mass_diff))], min(mass_diff)
+
+
+def dist_discrim(Spectra, Z, sample_number, method='average'):
+    """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples.
+
+       This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
+    hierarchical clustering linkage matrix and the labels (in Spectra) of each sample. For each set of samples with the same label, it 
+    calculates the difference of distances between where the cluster with all the set of samples was formed and the cluster that joins 
+    those set of samples with another samples. The normalization of this distance is made by dividing said difference by the max 
+    distance between any two cluster. If the samples with the same label aren't all in the same cluster before any other sample joins 
+    them, the distance given to this set of samples is zero. It returns the measure of the normalized distance as well as a dictionary 
+    with all the calculated distances for all set of samples (labels).
+
+       Spectra: AlignedSpectra object (from metabolinks).
+       Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
+       sample_number: int; number of samples of a set (all with the same label in Spectra).
+       method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
+    based on the distances calculated for each set of samples.
+
+       Returns: (scalar, dictionary); normalized discrimination distance measure, dictionary with the discrimination distance for each
+    set of samples.
+    """
+
+    # Creating dictionaries with the clusters formed at iteration r and the distance between the elements of said cluster.
+    dists = {}
+    clust = {}
+    for i in range(0, len(Z)+1):
+        clust[i] = (float(i),)
+    for r in range(0, len(Z)):
+        clust[len(Z)+1+r] = clust[Z[r, 0]] + clust[Z[r, 1]]
+        dists[len(Z)+1+r] = Z[r, 2]
+
+    # Calculating discriminating distances of a set of samples with the same label and storing in a dictionary.
+    separaT = 0
+    separa = dict(zip(Spectra.unique_labels(), [
+                  0] * len(Spectra.unique_labels())))
+    for i in clust:
+        if len(clust[i]) == sample_number:
+            label = [Spectra.labels[int(clust[i][j])]
+                     for j in range(sample_number)]
+            # All labels must be the same.
+            if label.count(label[0]) == len(label):
+                itera = np.where(Z == i)[0][0]
+                dif_dist = Z[itera, 2]
+                separa[label[0]] = (dif_dist-dists[i])/Z[-1, 2]
+                separaT = separaT + separa[label[0]]
+
+    # Method to quantify
+    if method == 'average':
+        separaM = separaT/len(Spectra.unique_labels())
+    elif method == 'median':
+        separaM = np.median(list(separa.values()))
+        if separaM == 0:
+            separaM = None
+    else:
+        raise ValueError(
+            'Method not recognized. Available methods: "average", "median".')
+
+    return separaM, separa
