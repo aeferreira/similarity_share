@@ -3,7 +3,8 @@ from metabolinks import AlignedSpectra
 import numpy as np
 
 """Elimination of features with too many missing values, missing value estimation, normalization by reference feature,
-generalized logarithmic transformation, reference feature estimation and Pareto Scaling of data."""
+generalized logarithmic transformation, reference feature estimation and Pareto Scaling of data. Discrimination distance of
+hierarchical clustering."""
 
 
 def NaN_Imputation(Spectra, minsample=0):
@@ -67,7 +68,7 @@ def glog(Spectra, lamb=0):
        """
 
     y = Spectra.data.copy()
-    y = np.log(y + (y**2 + lamb)**0.5)
+    y = np.log2(y + (y**2 + lamb)**0.5)
     return AlignedSpectra(y, sample_names=Spectra.sample_names, labels=Spectra.labels)
 
 
@@ -124,8 +125,8 @@ def search_for_ref_feat(Spectra, approx_mass):
         return feat_est[0], abs(feat_est[0] - approx_mass)
 
     elif len(feat_est) == 0:
-        #raise ValueError ('No feature is present in all sample around approx_mass.')
-        return print('Error - No feature is present in all sample around approx_mass')
+        raise ValueError ('No feature is present in all sample around approx_mass.')
+        #return print('Error - No feature is present in all sample around approx_mass')
 
     # Tiebraker: Be closer to the approximate mass (m/z) given than other peaks that fulfill previous conditions.
     else:
@@ -135,9 +136,36 @@ def search_for_ref_feat(Spectra, approx_mass):
 
         return feat_est[mass_diff.index(min(mass_diff))], min(mass_diff)
 
+def spectra_proc(Spectra, minsample=0, Feat_mass=False, remove=True, lamb= 'False', Pareto = True):
+    """Performs any combination of Missing Value Imputation, Normalization by a reference feature, Generalized Logarithmic 
+    Transformation and Pareto Scaling of the dataset.
+
+       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
+       minsample: scalar, optional; number between 0 and 1, minsample*100 represents the minimum % of samples where the feature must 
+    be present in order to not be removed.
+       Feat_mass: scalar (default: False); m/z of the reference feature to normalize the sample. False - Normalization is not performed.
+       remove: bool (deafult: True); True to remove reference feature from data after normalization.
+       lamb: scalar (default - 'False');  transformation parameter, if 'False', glog transformation is not performed.
+       Pareto: bool (default - True); if True performs Pareto Scaling.
+
+       Returns: Processed Aligned Spectra object (from metabolinks).
+    """
+    if minsample != 100: #Missing Value Imputation
+        Spectra = NaN_Imputation(Spectra, minsample)
+
+    if Feat_mass != False: #Normalization by a reference feature
+        Spectra = Norm_Feat(Spectra, Feat_mass, remove = remove)
+
+    if lamb != 'False': #glog transformation
+        Spectra = glog(Spectra, lamb)
+
+    if Pareto != False: #Pareto Scaling
+        Spectra = ParetoScal(Spectra)
+    return Spectra
+
 
 def dist_discrim(Spectra, Z, sample_number, method='average'):
-    """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples.
+    """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
 
        This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
     hierarchical clustering linkage matrix and the labels (in Spectra) of each sample. For each set of samples with the same label, it 
@@ -178,10 +206,10 @@ def dist_discrim(Spectra, Z, sample_number, method='average'):
             if label.count(label[0]) == len(label):
                 itera = np.where(Z == i)[0][0]
                 dif_dist = Z[itera, 2]
-                separa[label[0]] = (dif_dist-dists[i])/Z[-1, 2]
+                separa[label[0]] = (dif_dist-dists[i])/Z[-1, 2]#Z[-1,2] - maximum distance between 2 clusters.
                 separaT = separaT + separa[label[0]]
 
-    # Method to quantify
+    # Method to quantify a measure of a global discriminating distance for a linkage matrix.
     if method == 'average':
         separaM = separaT/len(Spectra.unique_labels())
     elif method == 'median':
