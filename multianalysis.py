@@ -7,12 +7,21 @@ import scaling as sca
 import sklearn.cluster as skclust
 import sklearn.ensemble as skensemble
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import cohen_kappa_score
 from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import cohen_kappa_score
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import r2_score
+from sklearn.cross_decomposition import PLSRegression
+
 from metabolinks import AlignedSpectra
 
 #Apart from mergerank, other functions are incredibly specific to the objectives of this set of notebooks.
 #Functions present are for the different kinds of multivariate analysis made in the Jupyter Notebooks
+
+"""Rank creation for hierarchical clustering linkage matrices, discrimination distance for k-means clustering, oversampling based on a
+simple SMOTE method, different application of Random Forests to Spectra data, calculation of correlation coefficient between linkage
+matrices of two hierarchical clusterings."""
 
 #Hierarchical Clustering - function necessary for calculation of Baker's Gamma Correlation Coefficient
 def mergerank(Z):
@@ -272,6 +281,50 @@ def RF_M4(Spectra, reffeat, iter_num = 20, test_size = 0.1, n_trees = 200):
     
     return np.mean(scores), np.mean(accuracy), imp_feat_ord
 
+
+#Test the data with the training data, then check the difference with simple_RF. If this one is much higher, there is clear overfitting
+def overfit_RF(Spectra, iter_num = 20, test_size = 0.1, n_trees = 200):
+    """Performs random forest classification of a dataset n times giving its mean score, Kappa Cohen score, most important features and
+    cross-validation score.
+
+       Spectra: AlignedSpectra object (from metabolinks).
+       iter_num: int (default - 20); number of iterations that random forests are repeated.
+       test_size: scalar (default - 0.1); number between 0 and 1 equivalent to the fraction of the samples for the test group.
+       n_trees: int (default - 200); number of trees in each random forest.
+
+       Returns: (scalar, scalar, list of tuples, scalar); mean of the scores of the random forests, mean of the Cohen's Kappa score of 
+    the random forests, descending ordered list of tuples with index number of feature, feature importance and feature name, mean of
+    3-fold cross-validation score.
+    """
+    imp_feat = np.zeros((iter_num, len(Spectra.data)))
+    cks = []
+    scores = []
+    CV = []
+    
+    for i in range(iter_num): #number of times random forests are made
+        #Random Forest setup and fit
+        rf = skensemble.RandomForestClassifier(n_estimators = n_trees)
+        #X_train, X_test, y_train, y_test = train_test_split(Spectra.data.T, 
+                                                            #Spectra.labels, test_size = test_size)
+        rf.fit(Spectra.data.T, Spectra.labels)
+        
+        #Extracting the results of the random forest model built
+        y_pred = rf.predict(Spectra.data.T)
+        imp_feat[i,:] = rf.feature_importances_
+        cks.append(cohen_kappa_score(Spectra.labels, y_pred))
+        scores.append(rf.score(Spectra.data.T, Spectra.labels))
+        CV.append(np.mean(cross_val_score(rf, Spectra.data.T, Spectra.labels, cv=3)))
+    
+    #Joining and ordering all important features values from each random forest
+    imp_feat_sum = imp_feat.sum(axis = 0)/iter_num
+    imp_feat_sum = sorted(enumerate(imp_feat_sum), key = lambda x: x[1], reverse = True)
+    imp_feat_ord = []
+    for i,j in imp_feat_sum:
+        imp_feat_ord.append((i , j, Spectra.data.index[i]))
+    
+    return np.mean(scores), np.mean(cks), imp_feat_ord, np.mean(CV)
+
+
 #Function to calculate a correlation coefficient between 2 different hierarchical clusterings/ dendrograms.
 def Dendrogram_Sim(Z, zdist, Y, ydist, type = 'cophenetic', Trace = False):
     """Calculates a correlation coefficient between 2 dendograms based on their distances and hierarchical clustering performed.
@@ -312,3 +365,109 @@ def Dendrogram_Sim(Z, zdist, Y, ydist, type = 'cophenetic', Trace = False):
             return Corr
         else:
             raise ValueError ('Type not Recognized. Types accepted: "Baker Kendall", "Baker Spearman", "cophenetic"')
+
+
+#PLS-DA functions
+def optim_PLS(Spectra, matrix, max_comp = 50):
+    """Searches for an optimum number of components to use in PLS-DA by accuracy (3-fold cross validation) and mean-squared errors.
+
+       Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
+       matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
+       max_comp: integer; upper limit for the number of components used.
+
+       Returns: (list, list, list), 3-fold cross-validation score and r2 score and mean squared errors for all components searched.
+    """
+    #Preparating lists to store results
+    CVs = []
+    CVr2s = []
+    MSEs = []
+    #Repeating for each component from 1 to max_comp
+    for i in range(1,max_comp+1):
+        cv = []
+        cvr2 = []
+        mse = []
+
+        #Splitting data into 3 groups for 3-fold cross-validation
+        kf = StratifiedKFold(3, shuffle = True)
+        #Repeating for each of the 3 groups
+        for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+            plsda = PLSRegression(n_components = i)
+            X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
+            y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
+
+            #Fitting the model
+            plsda.fit(X=X_train,Y=y_train)
+
+            #Obtaining results with the test group
+            cv.append(plsda.score(X_test,y_test))
+            cvr2.append(r2_score(plsda.predict(X_test), y_test))
+            y_pred = plsda.predict(X_test)
+            mse.append(mean_squared_error(y_test, y_pred))
+        #Storing results for each number of components
+        CVs.append(np.mean(cv))
+        CVr2s.append(np.mean(cvr2))
+        MSEs.append(np.mean(mse))
+
+    return CVs, CVr2s, MSEs
+
+def model_PLSDA(Spectra, matrix, n_comp, figures = False):
+    """Perform PLS-DA on an AlignedSpectra with 3-fold cross-validation and obtain the model's accuracy.
+
+       Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
+       matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
+       n_comp: integer; number of components to use in PLS-DA.
+       figures: bool (default: False); if true, shows distribution of samples in 3 scatter plots with the 2 most important latent 
+    variables (components) - one for each group of cross-validation.
+
+       Returns: (scalar, scalar, scalar), accuracy in group selection, 3-fold cross-validation score and r2 score of the model.
+    """
+
+    #Splitting data into 3 groups for 3-fold cross-validation
+    kf = StratifiedKFold(3, shuffle = True)
+    certo = 0
+    #Repeating for each of the 3 groups
+    for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+        plsda = PLSRegression(n_components = n_comp)
+        X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
+        y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
+        #Fitting the model
+        plsda.fit(X=X_train,Y=y_train)
+
+        #Obtaining results with the test group
+        cv = plsda.score(X_test,y_test)
+        cvr2 = r2_score(plsda.predict(X_test), y_test)
+        y_pred = plsda.predict(X_test)
+
+        #Decision to which group each sample belongs to based on y_pred
+        #Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
+        for i in range(len(y_pred)):
+            #if list(y_test[i]).index(max(y_test[i])) == np.argmax(y_pred[i]):
+            if list(y_test.iloc[:,i]).index(max(y_test.iloc[:,i])) == np.argmax(y_pred[i]):
+                certo = certo + 1 #Correct prediction
+
+        #figures = True - making scatter plots of training data in the 2 first components
+        LV_score = pd.DataFrame(plsda.x_scores_)
+        if figures:
+            #Preparing colours to separate different groups
+            colours = cm.get_cmap('nipy_spectral', 13)
+            col_lbl = colours(range(13))
+            col_lbl = list(col_lbl)
+            for i in range(len(col_lbl)):
+                a = 2*i
+                col_lbl.insert(a+1,col_lbl[a])
+            
+            #Scatter plot
+            ax = LV_score.iloc[:,0:2].plot(x=0, y=1, kind='scatter', s=50, alpha=0.7, c = col_lbl, figsize=(9,9))
+            #Labeling each point
+            i = -1
+            for n, x in enumerate(LV_score.values): 
+                if n%2 == 0:
+                    i = i + 1
+                label = Spectra.unique_labels()[i]
+                #label = LV_score.index.values[n]
+                ax.text(x[0],x[1],label, fontsize = 8)
+
+    #Calculating the accuracy of the group predicted
+    Accuracy = certo/len(Spectra.labels)
+
+    return Accuracy, np.mean(cv), np.mean(cvr2)
