@@ -6,14 +6,10 @@ import scipy.stats as stats
 import scaling as sca
 import sklearn.cluster as skclust
 import sklearn.ensemble as skensemble
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import cohen_kappa_score
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics import r2_score
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.metrics import cohen_kappa_score, mean_squared_error, r2_score
 from sklearn.cross_decomposition import PLSRegression
-
+from matplotlib import cm
 from metabolinks import AlignedSpectra
 
 #Apart from mergerank, other functions are incredibly specific to the objectives of this set of notebooks.
@@ -144,47 +140,50 @@ def fast_SMOTE(Spectra, binary = False):
 #Random Forests Functions - simple_RF, RF_M3 (Method 3), RF_M4 (Method 4)
 
 #simple_RF - RF application and result extraction.
-def simple_RF(Spectra, iter_num = 20, test_size = 0.1, n_trees = 200):
-    """Performs random forest classification of a dataset n times giving its mean score, Kappa Cohen score, most important features and
-    cross-validation score.
+def simple_RF(Spectra, iter_num = 20, n_fold = 3, n_trees = 200):
+    """Performs k-fold cross validation on random forest classification of a dataset n times giving its accuracy and ordered most
+    important features.
 
        Spectra: AlignedSpectra object (from metabolinks).
        iter_num: int (default - 20); number of iterations that random forests are repeated.
-       test_size: scalar (default - 0.1); number between 0 and 1 equivalent to the fraction of the samples for the test group.
+       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
+    samples belonging to one group).
        n_trees: int (default - 200); number of trees in each random forest.
 
-       Returns: (scalar, scalar, list of tuples, scalar); mean of the scores of the random forests, mean of the Cohen's Kappa score of 
-    the random forests, descending ordered list of tuples with index number of feature, feature importance and feature name, mean of
-    3-fold cross-validation score.
+       Returns: (list, list of tuples); list of the scores/accuracies of k-fold cross-validation of the random forests (each iteration 
+    and each group), descending ordered list of tuples with index number of feat.
     """
-    imp_feat = np.zeros((iter_num, len(Spectra.data)))
-    cks = []
-    scores = []
-    CV = []
-    
-    for i in range(iter_num): #number of times random forests are made
-        #Random Forest setup and fit
-        rf = skensemble.RandomForestClassifier(n_estimators = n_trees)
-        X_train, X_test, y_train, y_test = train_test_split(Spectra.data.T, 
-                                                            Spectra.labels, test_size = test_size)
-        rf.fit(X_train, y_train)
+    #Setting up variables for result storing
+    imp_feat = np.zeros((iter_num*n_fold, len(Spectra.data)))
+    cv = []
+    f = 0
+    for i in range(iter_num): #number of times random forests cross-validation is made
+        #Dividing dataset in balanced n_fold groups
+        kf = StratifiedKFold(n_fold, shuffle = True)
         
-        #Extracting the results of the random forest model built
-        y_pred = rf.predict(X_test)
-        imp_feat[i,:] = rf.feature_importances_
-        cks.append(cohen_kappa_score(y_test, y_pred))
-        scores.append(rf.score(X_test, y_test))
-        CV.append(np.mean(cross_val_score(rf, Spectra.data.T, Spectra.labels, cv=3)))
+        #Repeating for each of the n groups the random forest model fit and classification
+        for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+            #Random Forest setup and fit
+            rf = skensemble.RandomForestClassifier(n_estimators = n_trees)
+            X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
+            y_train, y_test = [Spectra.labels[i] for i in train_index], [Spectra.labels[i] for i in test_index]
+            rf.fit(X_train, y_train)
+
+            #Obtaining results with the test group
+            cv.append(rf.score(X_test,y_test))
+            imp_feat[f,:] = rf.feature_importances_
+            f = f + 1
     
     #Joining and ordering all important features values from each random forest
-    imp_feat_sum = imp_feat.sum(axis = 0)/iter_num
+    imp_feat_sum = imp_feat.sum(axis = 0)/(iter_num*n_fold)
     imp_feat_sum = sorted(enumerate(imp_feat_sum), key = lambda x: x[1], reverse = True)
     imp_feat_ord = []
     for i,j in imp_feat_sum:
         imp_feat_ord.append((i , j, Spectra.data.index[i]))
     
-    return np.mean(scores), np.mean(cks), imp_feat_ord, np.mean(CV)
+    return cv, imp_feat_ord
 
+#In disuse
 #Function for method 3 - SMOTE on the training set
 def RF_M3(Spectra, iter_num = 20, binary = False, test_size = 0.1, n_trees = 200):
     """Performs random forest classification of a dataset (oversampling the training set) n times giving its mean score, Kappa Cohen 
@@ -228,6 +227,7 @@ def RF_M3(Spectra, iter_num = 20, binary = False, test_size = 0.1, n_trees = 200
 
     return np.mean(scores), np.mean(cks), imp_feat_ord
 
+#In disuse
 #Function for method 3 - SMOTE on the training set and NGP processing of training and test data together.
 def RF_M4(Spectra, reffeat, iter_num = 20, test_size = 0.1, n_trees = 200):
     """Performs random forest classification of a dataset (after oversampling the training sets and data processing both sets) n times 
@@ -416,8 +416,8 @@ def model_PLSDA(Spectra, matrix, n_comp, figures = False):
        Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
        matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
        n_comp: integer; number of components to use in PLS-DA.
-       figures: bool (default: False); if true, shows distribution of samples in 3 scatter plots with the 2 most important latent 
-    variables (components) - one for each group of cross-validation.
+       figures: bool/int (default: False); if an integer n, shows distribution of samples of n groups in 3 scatter plots with the 2 most
+    important latent variables (components) - one for each group of cross-validation.
 
        Returns: (scalar, scalar, scalar), accuracy in group selection, 3-fold cross-validation score and r2 score of the model.
     """
@@ -432,7 +432,7 @@ def model_PLSDA(Spectra, matrix, n_comp, figures = False):
         y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
         #Fitting the model
         plsda.fit(X=X_train,Y=y_train)
-
+        
         #Obtaining results with the test group
         cv = plsda.score(X_test,y_test)
         cvr2 = r2_score(plsda.predict(X_test), y_test)
@@ -447,10 +447,11 @@ def model_PLSDA(Spectra, matrix, n_comp, figures = False):
 
         #figures = True - making scatter plots of training data in the 2 first components
         LV_score = pd.DataFrame(plsda.x_scores_)
-        if figures:
+
+        if figures != False:
             #Preparing colours to separate different groups
-            colours = cm.get_cmap('nipy_spectral', 13)
-            col_lbl = colours(range(13))
+            colours = cm.get_cmap('nipy_spectral', figures)
+            col_lbl = colours(range(figures))
             col_lbl = list(col_lbl)
             for i in range(len(col_lbl)):
                 a = 2*i
