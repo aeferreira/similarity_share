@@ -151,7 +151,7 @@ def simple_RF(Spectra, iter_num = 20, n_fold = 3, n_trees = 200):
        n_trees: int (default - 200); number of trees in each random forest.
 
        Returns: (list, list of tuples); list of the scores/accuracies of k-fold cross-validation of the random forests (each iteration 
-    and each group), descending ordered list of tuples with index number of feat.
+    and each group), descending ordered list of tuples with index number of feature, feature importance and name of feature.
     """
     #Setting up variables for result storing
     imp_feat = np.zeros((iter_num*n_fold, len(Spectra.data)))
@@ -410,65 +410,127 @@ def optim_PLS(Spectra, matrix, max_comp = 50):
 
     return CVs, CVr2s, MSEs
 
-def model_PLSDA(Spectra, matrix, n_comp, figures = False):
-    """Perform PLS-DA on an AlignedSpectra with 3-fold cross-validation and obtain the model's accuracy.
+def _calculate_vips(model):
+    """ VIP (Variable Importance in Projection) of the PLSDA model for each variable in the system.
+
+        model: PLS Regression model fitted to a dataset from scikit-learn.
+
+        returns: list; VIP score for each variable from the dataset.
+    """
+    #Setting up the variables
+    t = model.x_scores_
+    w = model.x_weights_
+    q = model.y_loadings_
+    p, h = w.shape
+    vips = np.zeros((p,))
+
+    #Calculating VIPs
+    s = np.diag(np.matmul(np.matmul(np.matmul(t.T,t),q.T), q)).reshape(h, -1)
+    total_s = np.sum(s)
+    for i in range(p):
+        weight = np.array([ (w[i,j] / np.linalg.norm(w[:,j]))**2 for j in range(h) ])
+        vips[i] = np.sqrt(p*(np.matmul(s.T, weight))/total_s)
+
+    return vips
+
+def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = False):
+    """Perform PLS-DA on an AlignedSpectra with 3-fold cross-validation and obtain the model's accuracy and important features.
 
        Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
        matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
        n_comp: integer; number of components to use in PLS-DA.
+       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
+    samples belonging to one group).
+    iter_num: int (default - 1); number of iterations that PLS-DA is repeated.
        figures: bool/int (default: False); if an integer n, shows distribution of samples of n groups in 3 scatter plots with the 2 most
     important latent variables (components) - one for each group of cross-validation.
 
-       Returns: (scalar, scalar, scalar), accuracy in group selection, 3-fold cross-validation score and r2 score of the model.
+       Returns: (list, list, list, list of tuples, list of tuples); accuracy in group selection, 3-fold cross-validation score, r2 score
+    of the model, descending ordered list of tuples with index number of feature, feature importance and name of feature for X_Weights 
+    and Regression Coefficients (two methods of feature selection) respectively.
     """
+    #Setting up lists and matrices to store results
+    CV = []
+    CVR2 = []
+    Accuracy = []
+    Weights = np.zeros((iter_num*n_fold, len(Spectra.data)))
+    RegCoef = np.zeros((iter_num*n_fold, len(Spectra.data)))
+    f = 0
+    
+    #Number of iterations equal to iter_num
+    for i in range(iter_num):
+        #Splitting data into 3 groups for 3-fold cross-validation
+        kf = StratifiedKFold(3, shuffle = True)
+        #Setting up variables for results of the application of 3-fold cross-validated PLS-DA
+        certo = 0
+        cv = []
+        cvr2 = []
 
-    #Splitting data into 3 groups for 3-fold cross-validation
-    kf = StratifiedKFold(3, shuffle = True)
-    certo = 0
-    #Repeating for each of the 3 groups
-    for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
-        plsda = PLSRegression(n_components = n_comp)
-        X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
-        y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
-        #Fitting the model
-        plsda.fit(X=X_train,Y=y_train)
-        
-        #Obtaining results with the test group
-        cv = plsda.score(X_test,y_test)
-        cvr2 = r2_score(plsda.predict(X_test), y_test)
-        y_pred = plsda.predict(X_test)
+        #Repeating for each of the 3 groups
+        for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+            plsda = PLSRegression(n_components = n_comp)
+            X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
+            y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
+            #Fitting the model
+            plsda.fit(X=X_train,Y=y_train)
 
-        #Decision to which group each sample belongs to based on y_pred
-        #Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
-        for i in range(len(y_pred)):
-            #if list(y_test[i]).index(max(y_test[i])) == np.argmax(y_pred[i]):
-            if list(y_test.iloc[:,i]).index(max(y_test.iloc[:,i])) == np.argmax(y_pred[i]):
-                certo = certo + 1 #Correct prediction
+            #Obtaining results with the test group
+            cv.append(plsda.score(X_test,y_test))
+            cvr2.append(r2_score(plsda.predict(X_test), y_test))
+            y_pred = plsda.predict(X_test)
 
-        #figures = True - making scatter plots of training data in the 2 first components
-        LV_score = pd.DataFrame(plsda.x_scores_)
-
-        if figures != False:
-            #Preparing colours to separate different groups
-            colours = cm.get_cmap('nipy_spectral', figures)
-            col_lbl = colours(range(figures))
-            col_lbl = list(col_lbl)
-            for i in range(len(col_lbl)):
-                a = 2*i
-                col_lbl.insert(a+1,col_lbl[a])
+            #Decision to which group each sample belongs to based on y_pred
+            #Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
+            for i in range(len(y_pred)):
+                #if list(y_test[i]).index(max(y_test[i])) == np.argmax(y_pred[i]):
+                if list(y_test.iloc[:,i]).index(max(y_test.iloc[:,i])) == np.argmax(y_pred[i]):
+                    certo = certo + 1 #Correct prediction
             
-            #Scatter plot
-            ax = LV_score.iloc[:,0:2].plot(x=0, y=1, kind='scatter', s=50, alpha=0.7, c = col_lbl, figsize=(9,9))
-            #Labeling each point
-            i = -1
-            for n, x in enumerate(LV_score.values): 
-                if n%2 == 0:
-                    i = i + 1
-                label = Spectra.unique_labels()[i]
-                #label = LV_score.index.values[n]
-                ax.text(x[0],x[1],label, fontsize = 8)
+            #Calculating important features by 2 different methods
+            Weights[f,:] = abs(plsda.x_weights_).sum(axis = 1)
+            RegCoef[f,:] = abs(plsda.coef_).sum(axis = 1)
+            f = f + 1
 
-    #Calculating the accuracy of the group predicted
-    Accuracy = certo/len(Spectra.labels)
+            #figures = True - making scatter plots of training data in the 2 first components
+            LV_score = pd.DataFrame(plsda.x_scores_)
 
-    return Accuracy, np.mean(cv), np.mean(cvr2)
+            if figures != False:
+                #Preparing colours to separate different groups
+                colours = cm.get_cmap('nipy_spectral', figures)
+                col_lbl = colours(range(figures))
+                col_lbl = list(col_lbl)
+                for i in range(len(col_lbl)):
+                    a = 2*i
+                    col_lbl.insert(a+1,col_lbl[a])
+
+                #Scatter plot
+                ax = LV_score.iloc[:,0:2].plot(x=0, y=1, kind='scatter', s=50, alpha=0.7, c = col_lbl, figsize=(9,9))
+                #Labeling each point
+                i = -1
+                for n, x in enumerate(LV_score.values): 
+                    if n%2 == 0:
+                        i = i + 1
+                    label = Spectra.unique_labels()[i]
+                    #label = LV_score.index.values[n]
+                    ax.text(x[0],x[1],label, fontsize = 8)
+
+
+        #Calculating the accuracy of the group predicted and storing score results
+        Accuracy.append(certo/len(Spectra.labels))
+        CV.append(np.mean(cv))
+        CVR2.append(np.mean(cvr2))
+        
+    #Joining and ordering all important features values from each cross validation group and iteration for each method.
+    Weights_sum = Weights.sum(axis = 0)/(iter_num*n_fold)
+    Weights_sum = sorted(enumerate(Weights_sum), key = lambda x: x[1], reverse = True)
+    Weights_ord = []
+    for i,j in Weights_sum:
+        Weights_ord.append((i , j, Spectra.data.index[i]))
+        
+    RegCoef_sum = RegCoef.sum(axis = 0)/(iter_num*n_fold)
+    RegCoef_sum = sorted(enumerate(RegCoef_sum), key = lambda x: x[1], reverse = True)
+    RegCoef_ord = []
+    for i,j in RegCoef_sum:
+        RegCoef_ord.append((i , j, Spectra.data.index[i]))
+    
+    return Accuracy, CV, CVR2, Weights_ord, RegCoef_ord
