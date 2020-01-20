@@ -164,7 +164,7 @@ def spectra_proc(Spectra, minsample=0, Feat_mass=False, remove=True, lamb= 'Fals
     return Spectra
 
 
-def dist_discrim(Spectra, Z, sample_number, method='average'):
+def dist_discrim(Spectra, Z, method='average'):
     """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
 
        This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
@@ -177,7 +177,6 @@ def dist_discrim(Spectra, Z, sample_number, method='average'):
 
        Spectra: AlignedSpectra object (from metabolinks).
        Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
-       sample_number: int; number of samples of a set (all with the same label in Spectra).
        method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
     based on the distances calculated for each set of samples.
 
@@ -194,14 +193,22 @@ def dist_discrim(Spectra, Z, sample_number, method='average'):
         clust[len(Z)+1+r] = clust[Z[r, 0]] + clust[Z[r, 1]]
         dists[len(Z)+1+r] = Z[r, 2]
 
+    #Creating dictionary with number of samples for each group    
+    sample_number = {}
+    for i in Spectra.unique_labels():
+        sample_number[i] = Spectra.labels.count(i)
+
     # Calculating discriminating distances of a set of samples with the same label and storing in a dictionary.
     separaT = 0
     separa = dict(zip(Spectra.unique_labels(), [
                   0] * len(Spectra.unique_labels())))
     for i in clust:
-        if len(clust[i]) == sample_number:
-            label = [Spectra.labels[int(clust[i][j])]
-                     for j in range(sample_number)]
+        label = [Spectra.labels[int(clust[i][j])]
+                     for j in range(len(clust[i]))]
+        #check if cluster length = the number of samples of the group of one of the samples that belong to the cluster.
+        if len(clust[i]) == sample_number[label[0]]:
+            #label = [Spectra.labels[int(clust[i][j])]
+                     #for j in range(sample_number)]
             # All labels must be the same.
             if label.count(label[0]) == len(label):
                 itera = np.where(Z == i)[0][0]

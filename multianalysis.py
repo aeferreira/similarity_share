@@ -368,12 +368,14 @@ def Dendrogram_Sim(Z, zdist, Y, ydist, type = 'cophenetic', Trace = False):
 
 
 #PLS-DA functions
-def optim_PLS(Spectra, matrix, max_comp = 50):
+def optim_PLS(Spectra, matrix, max_comp = 50, n_fold = 3):
     """Searches for an optimum number of components to use in PLS-DA by accuracy (3-fold cross validation) and mean-squared errors.
 
        Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
        matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
        max_comp: integer; upper limit for the number of components used.
+       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
+    samples belonging to one group).
 
        Returns: (list, list, list), 3-fold cross-validation score and r2 score and mean squared errors for all components searched.
     """
@@ -388,10 +390,10 @@ def optim_PLS(Spectra, matrix, max_comp = 50):
         mse = []
 
         #Splitting data into 3 groups for 3-fold cross-validation
-        kf = StratifiedKFold(3, shuffle = True)
+        kf = StratifiedKFold(n_fold, shuffle = True)
         #Repeating for each of the 3 groups
         for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
-            plsda = PLSRegression(n_components = i)
+            plsda = PLSRegression(n_components = i, scale = False)
             X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
             y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
 
@@ -460,7 +462,7 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = Fal
     #Number of iterations equal to iter_num
     for i in range(iter_num):
         #Splitting data into 3 groups for 3-fold cross-validation
-        kf = StratifiedKFold(3, shuffle = True)
+        kf = StratifiedKFold(n_fold, shuffle = True)
         #Setting up variables for results of the application of 3-fold cross-validated PLS-DA
         certo = 0
         cv = []
@@ -468,7 +470,7 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = Fal
 
         #Repeating for each of the 3 groups
         for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
-            plsda = PLSRegression(n_components = n_comp)
+            plsda = PLSRegression(n_components = n_comp, scale = False)
             X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
             y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
             #Fitting the model
@@ -483,7 +485,8 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = Fal
             #Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
             for i in range(len(y_pred)):
                 #if list(y_test[i]).index(max(y_test[i])) == np.argmax(y_pred[i]):
-                if list(y_test.iloc[:,i]).index(max(y_test.iloc[:,i])) == np.argmax(y_pred[i]):
+                #if list(y_test.iloc[:,i]).index(max(y_test.iloc[:,i])) == np.argmax(y_pred[i]):
+                if list(y_test.iloc[i,:]).index(max(y_test.iloc[i,:])) == np.argmax(y_pred[i]):
                     certo = certo + 1 #Correct prediction
             
             #Calculating important features by 2 different methods
