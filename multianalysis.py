@@ -50,19 +50,18 @@ def mergerank(Z):
 
 #K-means Clustering
 #Discrimination Distance for k-means
-def Kmeans_discrim(Spectra, sample_number, method = 'average'):
+def Kmeans_discrim(Spectra, method = 'average'):
     """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in k-means clustering.
 
-       This function performs a k-means clustering with the default parameters of sklearn.cluster.KMeans except the number of clusters 
-    that is equal to the number of unique labels of the spectra. It then checks each of the clusters formed to see if only the samples 
-    of a label/group are present and if all of them are present. If a group doesn't fulfill the conditions, a distance of zero is given 
-    to that set of labels. If it fulfills them, the distance is calculated as the distance between the centroid of the samples cluster 
+       This function performs a k-means clustering with the default parameters of sklearn.cluster.KMeans except the number of clusters
+    (equal to the number of unique labels of the spectra). It then checks each of the clusters formed to see if only the samples of a
+    label/group are present and if all of them are present. If a group doesn't fulfill the conditions, a distance of zero is given to
+    that set of labels. If it fulfills them, the distance is calculated as the distance between the centroid of the samples cluster
     and the closest centroid. The distance is normalized by dividing it by the maximum distance between any 2 cluster centroids. It then
-    returns the mean/median of the discrimination distances of all groups amd a dictionary with each individual discrimination distance.
+    returns the mean/median of the discrimination distances of all groups and a dictionary with each individual discrimination distance.
 
        Spectra: AlignedSpectra object (from metabolinks).
-       sample_number: int; number of samples of a set (all with the same label in Spectra).
-       method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
+       method: str (default: "average"); Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
     based on the distances calculated for each set of samples.
 
        Returns: (scalar, dictionary); discrimination distance measure, dictionary with the discrimination distance for each set of 
@@ -71,19 +70,23 @@ def Kmeans_discrim(Spectra, sample_number, method = 'average'):
     #Application of the K-means clustering with n_clusters equal to the number of unique labels.
     Kmean2 = skclust.KMeans(n_clusters = len(Spectra.unique_labels()))
     Kmean = Kmean2.fit(Spectra.data.T)
-    Clusters = {}
     Correct_Groupings = dict(zip(Spectra.unique_labels(), [
                       0] * len(Spectra.unique_labels())))
+
+    #Creating dictionary with number of samples for each group
+    sample_number = {}
+    for i in Spectra.unique_labels():
+        sample_number[i] = Spectra.labels.count(i)
 
     #Making a matrix with the pairwise distances between any 2 clusters.                      
     distc = dist.pdist(Kmean.cluster_centers_) 
     distma = dist.squareform(distc)
     maxi = max(distc) #maximum distance (to normalize discrimination distacnces).
     #Check if the two conditions are met (all samples in one cluster and only them) and calculation of discrimination distance.
-    for i in range(0,len(Spectra.labels), sample_number):
-        Clusters[Spectra.labels[i]] = Kmean.labels_[i:i+sample_number]
-        if (Kmean.labels_ == Kmean.labels_[i]).sum() == sample_number:
-            Correct_Groupings[Spectra.labels[i]] = min(distma[Kmean.labels_[i],:][distma[Kmean.labels_[i],:]!=0])/maxi
+    for i in Spectra.unique_labels():
+        if (Kmean.labels_ == Kmean.labels_[Spectra.labels.index(i)]).sum() == sample_number[i]:
+            Correct_Groupings[i] = min(distma[Kmean.labels_[Spectra.labels.index(i)],
+                    :][distma[Kmean.labels_[Spectra.labels.index(i)],:]!=0])/maxi
 
     #Method to quantify a measure of a global discriminating distance for k-means clustering.            
     if method == 'average':

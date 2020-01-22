@@ -96,10 +96,10 @@ Z_euc_neg = hier.linkage(dist_euc_neg, method='average')
 
 
 def test_dist_dicrim_average():
-    discrim = sca.dist_discrim(aligned_all_neg, Z_euc_neg, 3, method='average')
+    discrim = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='average')
     assert str(discrim[0]) == str(np.array(list(discrim[1].values())).mean())
 
 
 def test_dist_dicrim_median():
-    discrim = sca.dist_discrim(aligned_all_neg, Z_euc_neg, 3, method='median')
+    discrim = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='median')
     assert discrim[0] == np.median(list(discrim[1].values()))
