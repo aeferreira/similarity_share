@@ -328,6 +328,57 @@ def overfit_RF(Spectra, iter_num = 20, test_size = 0.1, n_trees = 200):
     return np.mean(scores), np.mean(cks), imp_feat_ord, np.mean(CV)
 
 
+def permutation_RF(Spectra, iter_num = 100, n_fold = 3, n_trees = 200):
+    """Performs permutation test n times with k-fold cross validation of a dataset for random forest classification giving its accuracy
+    score for the original and all permutations made and respective p-value.
+
+       Spectra: AlignedSpectra object (from metabolinks).
+       iter_num: int (default - 100); number of permutations that will be made.
+       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
+    samples belonging to one group).
+       n_trees: int (default - 200); number of trees in each random forest.
+
+       Returns: (scalar, list of scalars, scalar); accuracy of k-fold cross-validation of the random forests made, accuracy of all
+    permutations made of k-fold cross-validation of the random forest made, p-value (number of times permutation accuracy > original
+    accuracy + 1)/(number of permutations + 1).
+    """
+    #Setting up variables for result storing
+    Perm = []
+    #Setting lsit of columns to shuffle and dataframe of the data to put columns in NewC shuffled order
+    NewC = list(Spectra.data.columns.copy())
+    df = Spectra.data.copy()
+    #For dividing the dataset in balanced n_fold groups with a random random state maintained in all permutations (identical splits)
+    kf = StratifiedKFold(n_fold, shuffle = True, random_state = np.random.randint(1000000000))
+
+    for i in range(iter_num+1): #number of different permutations + original dataset where random forests cross-validation will be made
+        #Temporary dataframe with columns in order of the NewC
+        temp = df[NewC]
+        perm = []
+        splits = kf.split(Spectra.data.T, Spectra.labels)
+        #Repeating for each of the k groups the random forest model fit and classification
+        for train_index, test_index in splits:
+            #Random Forest setup and fit
+            rf = skensemble.RandomForestClassifier(n_estimators = n_trees)
+            X_train, X_test = temp[temp.columns[train_index]].T, temp[temp.columns[test_index]].T
+            y_train, y_test = [Spectra.labels[i] for i in train_index], [Spectra.labels[i] for i in test_index]
+
+            rf.fit(X_train, y_train)
+            #Obtaining results with the test group
+            perm.append(rf.score(X_test,y_test))
+
+        #Shuffle dataset columns - 1 permutation of the columns (leads to permutation of labels)
+        np.random.shuffle(NewC)
+
+        #Appending k-fold cross-validation score
+        Perm.append(np.mean(perm))
+
+    #Taking out k-fold cross-validation accuracy for the non-shuffled (labels) dataset and p-value calculation
+    CV = Perm[0]
+    pvalue = (sum(Perm[1:]>=Perm[0]) + 1)/(iter_num+1)
+
+    return CV, Perm[1:], pvalue
+
+
 #Function to calculate a correlation coefficient between 2 different hierarchical clusterings/ dendrograms.
 def Dendrogram_Sim(Z, zdist, Y, ydist, type = 'cophenetic', Trace = False):
     """Calculates a correlation coefficient between 2 dendograms based on their distances and hierarchical clustering performed.
@@ -540,3 +591,71 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = Fal
         RegCoef_ord.append((i , j, Spectra.data.index[i]))
     
     return Accuracy, CV, CVR2, Weights_ord, RegCoef_ord
+
+def permutation_PLSDA(Spectra, n_comp, n_fold = 3, iter_num = 100, figures = False):
+    """Perform permutation test of PLS-DA on an AlignedSpectra with 3-fold cross-validation used to obtain the model's and its
+    permutations accuracy.
+
+       Spectra: AlignedSpectra object (from metabolinks); includes X and Y equivalent in PLS-DA (training vectors and groups).
+       n_comp: integer; number of components to use in PLS-DA.
+       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
+    samples belonging to one group).
+    iter_num: int (default - 100); number of permutations made (times labels are shuffled).
+
+       Returns: (scalar, list of scalars, scalar); accuracy of k-fold cross-validation of the PLS-DA made, accuracy of all
+    permutations made of k-fold cross-validation of the PLS-DA made, p-value (number of times permutation accuracy > original
+    accuracy + 1)/(number of permutations + 1).
+    """
+    #Setting up a list to store results
+    Accuracy = []
+    
+    #Setting list of columns to shuffle and dataframe of the data to put columns in NewC shuffled order
+    NewC = list(Spectra.data.columns.copy())
+    df = Spectra.data.copy()
+
+    #Matrix formation
+    if len(Spectra.unique_labels()) > 2:
+        #Setting up the y matrix for when there are more than 2 classes (multi-class)
+        matrix = pd.get_dummies(Spectra.labels)
+        matrix = matrix[Spectra.unique_labels()]
+    else:
+        #Setting the y list when there are only 2 classes
+        matrix = Spectra.labels
+
+    #Splitting data into n_fold groups for n-fold cross-validation
+    kf = StratifiedKFold(n_fold, shuffle = True, random_state = np.random.randint(1000000000))
+    #Number of permutations + dataset with non-shuffled labels equal to iter_num + 1
+    for i in range(iter_num+1):
+        #Temporary dataframe with columns in order of the NewC
+        temp = df[NewC]
+        #Setting up variables for results of the application of 3-fold cross-validated PLS-DA
+        certo = 0
+
+        #Repeating for each of the n groups
+        for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+            #plsda model building for each of the n stratified groups amde
+            plsda = PLSRegression(n_components = n_comp, scale = False)
+            X_train, X_test = temp[temp.columns[train_index]].T, temp[temp.columns[test_index]].T
+            y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
+            #Fitting the model
+            plsda.fit(X=X_train,Y=y_train)
+
+            #Obtaining results with the test group
+            y_pred = plsda.predict(X_test)
+
+            #Decision to which group each sample belongs to based on y_pred
+            #Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
+            for i in range(len(y_pred)):
+                if list(y_test.iloc[i,:]).index(max(y_test.iloc[i,:])) == np.argmax(y_pred[i]):
+                    certo = certo + 1 #Correct prediction
+
+        #Calculating the accuracy of the group predicted and storing score results (for original and permutated labels)
+        Accuracy.append(certo/len(Spectra.labels))
+        #Shuffle dataset labels - 1 permutation of the labels
+        np.random.shuffle(NewC)
+
+    #Taking k-fold cross-validation accuracy for the non-shuffled (labels) dataset and p-value calculation
+    CV = Accuracy[0]
+    pvalue = (sum([Accuracy[i] for i in range(1,len(Accuracy)) if Accuracy[i] >= Accuracy[0]]) + 1)/(iter_num+1)
+
+    return CV, Accuracy[1:], pvalue
