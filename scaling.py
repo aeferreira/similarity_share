@@ -56,20 +56,21 @@ def Norm_Feat(Spectra, Feat_mass, remove=True):
     return AlignedSpectra(temp, sample_names=Spectra.sample_names, labels=Spectra.labels)
 
 
-# Lots of work to do here; optimize lambda and such
-# Currently working on it
-def glog(Spectra, lamb=0):
-    """Performs Generalized Logarithmic Transformation on a Spectra.
+def glog(Spectra, lamb = True):
+    """Performs Generalized Logarithmic Transformation on a Spectra (same as MetaboAnalyst's transformation).
 
        Spectra: AlignedSpectra object (from metabolinks).
-       lamb: scalar, optional;  transformation parameter.
+       lamb: scalar, optional (default: True);  transformation parameter, if True lamb = minimum value in the data divided by 10.
 
-       Returns: AlignedSpectra object (from metabolinks); transformed spectra by a factor of log(y + (y**2 + lamb)**0.5).
+       Returns: AlignedSpectra object (from metabolinks); transformed spectra by a factor of log(y + (y**2 + lamb**2)**0.5).
        """
-
+    #Defining lambda
+    if lamb == True:
+        lamb = min(Spectra.data.min()/10)
+    #Applying the equation
     y = Spectra.data.copy()
-    y = np.log2(y + (y**2 + lamb)**0.5)
-    return AlignedSpectra(y, sample_names=Spectra.sample_names, labels=Spectra.labels)
+    y = np.log2((y + (y**2 + lamb**2)**0.5)/2)
+    return AlignedSpectra(y, sample_names = Spectra.sample_names, labels = Spectra.labels)
 
 
 # Function to do Pareto Scaling, it accomodates Missing Values.
