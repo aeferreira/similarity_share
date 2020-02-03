@@ -163,7 +163,7 @@ def simple_RF(Spectra, iter_num = 20, n_fold = 3, n_trees = 200):
     for i in range(iter_num): #number of times random forests cross-validation is made
         #Dividing dataset in balanced n_fold groups
         kf = StratifiedKFold(n_fold, shuffle = True)
-        
+        CV = []
         #Repeating for each of the n groups the random forest model fit and classification
         for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
             #Random Forest setup and fit
@@ -173,10 +173,11 @@ def simple_RF(Spectra, iter_num = 20, n_fold = 3, n_trees = 200):
             rf.fit(X_train, y_train)
 
             #Obtaining results with the test group
-            cv.append(rf.score(X_test,y_test))
+            CV.append(rf.score(X_test,y_test))
             imp_feat[f,:] = rf.feature_importances_
             f = f + 1
-    
+
+        cv.append(np.mean(CV))
     #Joining and ordering all important features values from each random forest
     imp_feat_sum = imp_feat.sum(axis = 0)/(iter_num*n_fold)
     imp_feat_sum = sorted(enumerate(imp_feat_sum), key = lambda x: x[1], reverse = True)
