@@ -490,17 +490,18 @@ def _calculate_vips(model):
 
     return vips
 
-def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = False):
+def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, feat_type = 'Coef', figures = False):
     """Perform PLS-DA on an AlignedSpectra with 3-fold cross-validation and obtain the model's accuracy and important features.
 
        Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
        matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
        n_comp: integer; number of components to use in PLS-DA.
-       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
+       n_fold: int (default: 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
     samples belonging to one group).
-    iter_num: int (default - 1); number of iterations that PLS-DA is repeated.
-       figures: bool/int (default: False); if an integer n, shows distribution of samples of n groups in 3 scatter plots with the 2 most
-    important latent variables (components) - one for each group of cross-validation.
+    iter_num: int (default: 1); number of iterations that PLS-DA is repeated.
+       feat_type: string (default: 'Coef'); types of feature importance metrics to use; accepted: {'VIP', 'Coef', 'Weights'}.
+       figures: bool/int (default: False); only for 3-fold CV, if an integer n, shows distribution of samples of n groups in 3 scatter
+    plots with the 2 most important latent variables (components) - one for each group of cross-validation.
 
        Returns: (list, list, list, list of tuples, list of tuples); accuracy in group selection, 3-fold cross-validation score, r2 score
     of the model, descending ordered list of tuples with index number of feature, feature importance and name of feature for X_Weights 
@@ -510,8 +511,7 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = Fal
     CV = []
     CVR2 = []
     Accuracy = []
-    Weights = np.zeros((iter_num*n_fold, len(Spectra.data)))
-    RegCoef = np.zeros((iter_num*n_fold, len(Spectra.data)))
+    Imp_Feat = np.zeros((iter_num*n_fold, len(Spectra.data)))
     f = 0
     
     #Number of iterations equal to iter_num
@@ -539,14 +539,20 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = Fal
             #Decision to which group each sample belongs to based on y_pred
             #Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
             for i in range(len(y_pred)):
-                #if list(y_test[i]).index(max(y_test[i])) == np.argmax(y_pred[i]):
                 #if list(y_test.iloc[:,i]).index(max(y_test.iloc[:,i])) == np.argmax(y_pred[i]):
                 if list(y_test.iloc[i,:]).index(max(y_test.iloc[i,:])) == np.argmax(y_pred[i]):
                     certo = certo + 1 #Correct prediction
-            
-            #Calculating important features by 2 different methods
-            Weights[f,:] = abs(plsda.x_weights_).sum(axis = 1)
-            RegCoef[f,:] = abs(plsda.coef_).sum(axis = 1)
+
+            #Calculating important features by 1 of 3 different methods
+            if feat_type == 'VIP':
+                Imp_Feat[f,:] = _calculate_vips(plsda)
+            elif feat_type == 'Coef':
+                Imp_Feat[f,:] = abs(plsda.coef_).sum(axis = 1)
+            elif feat_type == 'Weights':
+                Imp_Feat[f,:] = abs(plsda.x_weights_).sum(axis = 1)
+            else:
+                raise ValueError ('Type not Recognized. Types accepted: "VIP", "Coef", "Weights"')
+
             f = f + 1
 
             #figures = True - making scatter plots of training data in the 2 first components
@@ -577,21 +583,15 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, figures = Fal
         Accuracy.append(certo/len(Spectra.labels))
         CV.append(np.mean(cv))
         CVR2.append(np.mean(cvr2))
-        
-    #Joining and ordering all important features values from each cross validation group and iteration for each method.
-    Weights_sum = Weights.sum(axis = 0)/(iter_num*n_fold)
-    Weights_sum = sorted(enumerate(Weights_sum), key = lambda x: x[1], reverse = True)
-    Weights_ord = []
-    for i,j in Weights_sum:
-        Weights_ord.append((i , j, Spectra.data.index[i]))
-        
-    RegCoef_sum = RegCoef.sum(axis = 0)/(iter_num*n_fold)
-    RegCoef_sum = sorted(enumerate(RegCoef_sum), key = lambda x: x[1], reverse = True)
-    RegCoef_ord = []
-    for i,j in RegCoef_sum:
-        RegCoef_ord.append((i , j, Spectra.data.index[i]))
-    
-    return Accuracy, CV, CVR2, Weights_ord, RegCoef_ord
+
+    #Joining and ordering all important features values from each cross validation group and iteration.
+    Imp_sum = Imp_Feat.sum(axis = 0)/(iter_num*n_fold)
+    Imp_sum = sorted(enumerate(Imp_sum), key = lambda x: x[1], reverse = True)
+    Imp_ord = []
+    for i,j in Imp_sum:
+        Imp_ord.append((i , j, Spectra.data.index[i]))
+
+    return Accuracy, CV, CVR2, Imp_ord
 
 def permutation_PLSDA(Spectra, n_comp, n_fold = 3, iter_num = 100, figures = False):
     """Perform permutation test of PLS-DA on an AlignedSpectra with 3-fold cross-validation used to obtain the model's and its
