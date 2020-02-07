@@ -6,6 +6,7 @@ import scipy.stats as stats
 import scaling as sca
 import sklearn.cluster as skclust
 import sklearn.ensemble as skensemble
+import random as rd
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics import cohen_kappa_score, mean_squared_error, r2_score
 from sklearn.cross_decomposition import PLSRegression
@@ -103,21 +104,25 @@ def Kmeans_discrim(Spectra, method = 'average'):
 
 
 #SMOTE oversampling method
-def fast_SMOTE(Spectra, binary = False):
+def fast_SMOTE(Spectra, binary = False, max_sample = 0):
     """Performs a fast oversampling of a set of spectra based on the simplest SMOTE method.
 
        New samples are artificially made using the formula: New_Sample = Sample1 + random_value * (Sample2 - Sample1), where the 
     random_value is a randomly generated number between 0 and 1. One new sample is made from any combinations of two different samples
-    belonging to the same group (label).
+    belonging to the same group/label.
 
        Spectra: AlignedSpectra object (from metabolinks).
        binary: bool (default - False); indication if the Spectra has binary data and therefore also ensuring the new samples made are
     also binary or if the Spectra has a "normal" non-binary dataset.
+       max_sample: integer (default: 0); number of maximum samples for each label. If < than the label with the most amount of
+    samples, this parameter is ignored. Samples chosen to be added to the dataset are randomly selected from all combinations of
+    two different samples belonging to the same group/label.
 
        Returns: AlignedSpectra object (from metabolinks); Spectra with extra samples originated with the name 'Arti(Sample1)-(Sample2)'.
     """
     Newdata = Spectra.data.copy()  
     nlabels = []
+    nnew = {}
     for i in range(len(Spectra.unique_labels())):
         #See how many samples there are in the dataset for each unique_label of the dataset
         samples = [Spectra.data.iloc[:,n] for n, x in enumerate(Spectra.labels) if x == Spectra.unique_labels()[i]]
@@ -136,7 +141,41 @@ def fast_SMOTE(Spectra, binary = False):
                         Newdata['Arti' + samples[j].name + '-' + samples[n-m].name] = samples[j] + random[0]*Vector
                     m = m + 1
                     #Giving the correct label to each new sample.
-                    nlabels.append(Spectra.unique_labels()[i]) 
+                    nlabels.append(Spectra.unique_labels()[i])
+
+        #Number of samples added for each unique label
+        if i == 0:
+            nnew[Spectra.unique_labels()[i]] = len(nlabels)
+        else:
+            nnew[Spectra.unique_labels()[i]] = len(nlabels) - sum(nnew.values())
+
+    #Creating dictionary with number of samples for each group
+    sample_number = {}
+    for i in Spectra.unique_labels():
+        sample_number[i] = Spectra.labels.count(i)
+
+    #Choosing samples for each group/labels to try and get max_samples in total of that label.
+    if max_sample >= max(sample_number.values()):
+        #List with names of the samples chosen for the final dataset
+        chosen_samples = list(Spectra.data.columns)
+        nlabels = []
+        loca = 0
+        for i in Spectra.unique_labels():
+            #Number of samples to add
+            n_choose = max_sample - sample_number[i]
+            #If there aren't enough new samples to get the total max_samples, choose all of them.
+            if n_choose > nnew[i]:
+                n_choose = nnew[i]
+            #Random choice of the samples for each label that will be added to the original dataset
+            chosen_samples.extend(rd.sample(list(Newdata.columns[len(Spectra.labels) + loca: len(Spectra.labels)
+                                                                 + loca + nnew[i]]),n_choose))
+            loca = loca + nnew[i]
+            nlabels.extend([i] * n_choose)
+
+        #Creating the dataframe with the chosen samples
+        Newdata = Newdata[chosen_samples]
+
+    #Creating the label list for the AlignedSpectra object
     Newlabels = Spectra.labels + nlabels
     return AlignedSpectra(Newdata, labels = Newlabels)
 
@@ -490,7 +529,7 @@ def _calculate_vips(model):
 
     return vips
 
-def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, feat_type = 'Coef', figures = False):
+def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type = 'Coef', figures = False):
     """Perform PLS-DA on an AlignedSpectra with 3-fold cross-validation and obtain the model's accuracy and important features.
 
        Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
@@ -498,7 +537,7 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 1, feat_type = '
        n_comp: integer; number of components to use in PLS-DA.
        n_fold: int (default: 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
     samples belonging to one group).
-    iter_num: int (default: 1); number of iterations that PLS-DA is repeated.
+    iter_num: int (default: 100); number of iterations that PLS-DA is repeated.
        feat_type: string (default: 'Coef'); types of feature importance metrics to use; accepted: {'VIP', 'Coef', 'Weights'}.
        figures: bool/int (default: False); only for 3-fold CV, if an integer n, shows distribution of samples of n groups in 3 scatter
     plots with the 2 most important latent variables (components) - one for each group of cross-validation.
