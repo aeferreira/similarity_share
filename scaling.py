@@ -38,7 +38,7 @@ def NaN_Imputation(Spectra, minsample=0):
 
 
 def Norm_Feat(Spectra, Feat_mass, remove=True):
-    """Normalization by a reference feature.
+    """Normalization of a dataset by a reference feature.
 
        Spectra: AlignedSpectra object (from metabolinks).
        Feat_mass: scalar; m/z of the reference feature to normalize the sample.
@@ -55,6 +55,40 @@ def Norm_Feat(Spectra, Feat_mass, remove=True):
 
     return AlignedSpectra(temp, sample_names=Spectra.sample_names, labels=Spectra.labels)
 
+def Norm_TotalInt (Spectra):
+    """Normalization of a dataset by the total peak intensity in each Spectra.
+
+       Spectra: AlignedSpectra object (from metabolinks).
+
+       Returns: AlignedSpectra object (from metabolinks); normalized spectra.
+    """
+    return AlignedSpectra(Spectra.data/Spectra.data.sum(), sample_names=Spectra.sample_names, labels = Spectra.labels)
+
+#Needs double-checking
+def Norm_PQN(Spectra, ref_sample = 'mean'):
+    """Normalization of a dataset by the Probabilistic Quotient Normalization method.
+
+       Spectra: AlignedSpectra object (from metabolinks).
+       ref_sample: reference sample to use in PQ Normalization, types accepted: "mean" (default, reference sample will be the
+    intensity mean of all samples for each feature - useful for when there are a lot of missing values), "median" (reference
+    sample will be the intensity median of all samples for each feature - useful for when there aren't a lot of missing values),
+    sample name (reference sample will be the sample with the given name in the dataset) or list with the intensities of all
+    peaks that will directly be the reference sample (pandas Series format not accepted).
+
+       Returns: AlignedSpectra object (from metabolinks); normalized spectra.
+    """
+    #"Building" the reference sample based on the input given
+    if ref_sample == 'mean':
+        ref_sample2 = Spectra.data.T/Spectra.data.mean(axis = 1)
+    elif ref_sample == 'median':
+        ref_sample2 = Spectra.data.T/Spectra.data.median(axis = 1)
+    elif ref_sample in Spectra.sample_names:
+        ref_sample2 = Spectra.data.T/Spectra.data.loc[:,ref_sample]
+    else:
+        ref_sample2 = Spectra.data.T/ref_sample
+    #Normalization Factor and Normalization
+    Norm_fact = ref_sample2.median(axis = 1)
+    return AlignedSpectra(Spectra.data/Norm_fact, sample_names = Spectra.sample_names, labels = Spectra.labels)
 
 def glog(Spectra, lamb = True):
     """Performs Generalized Logarithmic Transformation on a Spectra (same as MetaboAnalyst's transformation).
