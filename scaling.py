@@ -69,26 +69,71 @@ def Norm_PQN(Spectra, ref_sample = 'mean'):
     """Normalization of a dataset by the Probabilistic Quotient Normalization method.
 
        Spectra: AlignedSpectra object (from metabolinks).
-       ref_sample: reference sample to use in PQ Normalization, types accepted: "mean" (default, reference sample will be the
-    intensity mean of all samples for each feature - useful for when there are a lot of missing values), "median" (reference
-    sample will be the intensity median of all samples for each feature - useful for when there aren't a lot of missing values),
-    sample name (reference sample will be the sample with the given name in the dataset) or list with the intensities of all
-    peaks that will directly be the reference sample (pandas Series format not accepted).
+       ref_sample: reference sample to use in PQ Normalization, types accepted: "mean" (default, reference sample will be the intensity
+    mean of all samples for each feature - useful for when there are a lot of imputed missing values), "median" (reference sample will
+    be the intensity median of all samples for each feature - useful for when there aren't a lot of imputed missing values), sample name
+    (reference sample will be the sample with the given name in the dataset) or list with the intensities of all peaks that will
+    directly be the reference sample (pandas Series format not accepted - list(Series) is accepted).
 
        Returns: AlignedSpectra object (from metabolinks); normalized spectra.
     """
     #"Building" the reference sample based on the input given
-    if ref_sample == 'mean':
+    if ref_sample == 'mean': #Mean spectre of all samples
         ref_sample2 = Spectra.data.T/Spectra.data.mean(axis = 1)
-    elif ref_sample == 'median':
+    elif ref_sample == 'median': #Median spectre of all samples
         ref_sample2 = Spectra.data.T/Spectra.data.median(axis = 1)
-    elif ref_sample in Spectra.sample_names:
+    elif ref_sample in Spectra.sample_names: #Specified sample of the spectra
         ref_sample2 = Spectra.data.T/Spectra.data.loc[:,ref_sample]
-    else:
+    else: #Actual sample given
         ref_sample2 = Spectra.data.T/ref_sample
     #Normalization Factor and Normalization
     Norm_fact = ref_sample2.median(axis = 1)
     return AlignedSpectra(Spectra.data/Norm_fact, sample_names = Spectra.sample_names, labels = Spectra.labels)
+
+
+def Norm_Quantile(Spectra, ref_type = 'mean'):
+    """Normalization of a dataset by the Quantile Normalization method.
+
+       Missing Values are temporarily replaced with 0 (and count as 0) until normalization is done. Quantile Normalization is more
+    useful with no/low number of missing values.
+
+       Spectra: AlignedSpectra object (from metabolinks).
+       ref_type: str (default: 'mean'); reference sample to use in Quantile Normalization, types accepted: 'mean' (default,
+    reference sample will be the means of the intensities of each rank), 'median' (reference sample will be the medians of the
+    intensities for each rank).
+
+       Returns: AlignedSpectra object (from metabolinks); normalized spectra.
+    """
+    #Setting up the temporary dataset with missing values replaced by zero and dataframes for the results
+    norm = Spectra.data.copy().replace({np.nan:0})
+    ref_spectra = Spectra.data.copy()
+    ranks = Spectra.data.copy()
+
+    for i in range(len(norm)):
+        #Determining the ranks of each entry in the same row (same variable) in the dataset
+        ref_spectra.iloc[i] = norm.iloc[i].sort_values().values
+        ranks.iloc[i] = norm.iloc[i].rank(na_option = 'top')
+
+    #Determining the reference sample for normalization based on the ref_type chosen (applied on the columns).
+    if ref_type == 'mean':
+        ref_sample = ref_spectra.mean(axis = 0).values
+    elif ref_type == 'median':
+        ref_sample = ref_spectra.median(axis = 0).values
+    else:
+        raise ValueError('Type not recognized. Available ref_type: "mean", "median".')
+
+    #Replacing the values in the dataset for the reference sample values based on the rankscalculated  earlier for each entry
+    for i in range(len(ranks)):
+        for j in range(len(ranks.columns)):
+            if ranks.iloc[i,j] == round(ranks.iloc[i,j]):
+                norm.iloc[i,j] = ref_sample[int(ranks.iloc[i,j])-1]
+            else: #in case the rank isn't an integer and ends in .5 (happens when a pair number of samples have the same
+                  #value in the same column - after ordering from lowest to highest values by row).
+                norm.iloc[i,j] = np.mean((ref_sample[int(ranks.iloc[i,j]-1.5)], ref_sample[int(ranks.iloc[i,j]-0.5)]))
+
+    #Replacing 0's by missing values and creating the AlignedSpectra object for the output
+    return AlignedSpectra(norm.replace({0:np.nan}), sample_names = Spectra.sample_names, labels = Spectra.labels)
+
 
 def glog(Spectra, lamb = True):
     """Performs Generalized Logarithmic Transformation on a Spectra (same as MetaboAnalyst's transformation).
