@@ -6,13 +6,12 @@ import numpy as np
 transformation, reference feature estimation and centering and scaling methods. Discrimination distance of hierarchical clustering."""
 
 
-### Missing Value Imputation
-def NaN_Imputation(Spectra, minsample=0):
+### Missing Value Imputation and feature removal
+def NaN_Imputation(Spectra, minsample = 0):
     """Remove features with a certain % of missing values, replaces remaining ones by half of the minimum value of the original data.
 
        Spectra: AlignedSpectra object (from metabolinks).
-       minsample: scalar, optional; number between 0 and 1, minsample*100 represents the minimum % of samples where the feature must 
-    be present in order to not be removed.
+       minsample: scalar (default: 0); minimum percentage of samples a feature must be to not be removed.
 
        Returns: AlignedSpectra object (from metabolinks); Equal to Spectra but with some features removed and missing values replaced.
     """
@@ -30,12 +29,32 @@ def NaN_Imputation(Spectra, minsample=0):
                 a = a + 1
 
     Imputated = AlignedSpectra(
-        df, sample_names=Imputated.sample_names, labels=Imputated.labels)
+        df, sample_names = Imputated.sample_names, labels = Imputated.labels)
     # Replace missing values
-    Imputated.data.fillna(min(Imputated.data.min()/2), inplace=True)
+    Imputated.data.fillna(min(Imputated.data.min()/2), inplace = True)
 
     return Imputated
 
+def remove_feat(Spectra, minsample = 0):
+    """Remove features that appear in less that minsample% of samples.
+
+       Spectra: AlignedSpectra object (from metabolinks).
+       minsample: scalar (default: 0); minimum percentage of samples a feature must be to not be removed.
+
+       Returns: Filtered Aligned Spectra object (from metabolinks).
+    """
+    df = Spectra.data
+    if minsample != 0:
+        NumValues = Spectra.data.notnull()
+        a = 0
+        for i in range(0, len(NumValues)):
+            if sum(NumValues.iloc[i, :]) < minsample*Spectra.sample_count:
+                # Taking away features that appear in less of minsample% of samples.
+                df = df.drop([df.iloc[a].name])
+            else:
+                a = a + 1
+
+    return AlignedSpectra(df, sample_names = Spectra.sample_names, labels = Spectra.labels)
 
 ### Normalizations
 def Norm_Feat(Spectra, Feat_mass, remove=True):
@@ -215,6 +234,43 @@ def RangeScal(Spectra):
             scaled_aligned.iloc[j, :] = Spectra.data.iloc[j, ]
         else:
             scaled_aligned.iloc[j, :] = (Spectra.data.iloc[j, ] - Spectra.data.iloc[j, ].mean())/ranges.iloc[j]
+
+    # Return scaled spectra
+    return AlignedSpectra(scaled_aligned, sample_names = Spectra.sample_names, labels = Spectra.labels)
+
+
+def VastScal(Spectra):
+    """Performs Vast Scaling on an AlignedSpectra object.
+
+       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
+
+       Returns: Aligned Spectra object (from metabolinks); Vast Scaled Spectra."""
+
+    scaled_aligned = Spectra.data.copy()
+    std = Spectra.data.std(axis = 1)
+    mean = Spectra.data.mean(axis = 1)
+    # Applying Vast Scaling to each feature
+    scaled_aligned = (((Spectra.data.T - mean)/std)/(mean/std)).T
+
+    # Return scaled spectra
+    return AlignedSpectra(scaled_aligned, sample_names = Spectra.sample_names, labels = Spectra.labels)
+
+
+def LevelScal(Spectra, average = True):
+    """Performs Level Scaling on an AlignedSpectra object. (See van den Berg et al., 2006).
+
+       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
+       average: bool (Default - True); if True mean-centered data is divided by the mean spectra, if False it is divided by the median
+    spectra.
+
+       Returns: Aligned Spectra object (from metabolinks); Level Scaled Spectra."""
+
+    mean = Spectra.data.mean(axis = 1)
+    # Applying Level Scaling to each feature
+    if average == True:
+        scaled_aligned = ((Spectra.data.T - mean)/mean).T
+    elif average == False:
+        scaled_aligned = ((Spectra.data.T - mean)/Spectra.data.median(axis = 1)).T
 
     # Return scaled spectra
     return AlignedSpectra(scaled_aligned, sample_names = Spectra.sample_names, labels = Spectra.labels)
