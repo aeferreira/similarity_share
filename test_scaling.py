@@ -9,7 +9,7 @@ import numpy as np
 # Test file for the module scaling.
 # Need files from MetaboAnalyst besides the ones in this repository (see MetAnalyst_Example.ipynb)
 
-MetAna_O2 = read_aligned_spectra('MetAna_Original.csv', labels=True, sep=',')
+MetAna_O2 = read_aligned_spectra('MetAnalyst/MetAna_Original.csv', labels=True, sep=',')
 a = []
 O = MetAna_O2.data.copy()
 for i in range(len(O.index)):
@@ -17,7 +17,7 @@ for i in range(len(O.index)):
     O.rename(index={O.index[i]: float(a[i][0])}, inplace=True)
 MetAna_O = AlignedSpectra(O, labels=MetAna_O2.labels)
 
-MetAna_I = read_aligned_spectra('MetAna_Imputed.csv', labels=True, sep=',')
+MetAna_I = read_aligned_spectra('MetAnalyst/MetAna_Imputed.csv', labels=True, sep=',')
 
 
 def reading_MetAna_files(filename):
@@ -33,7 +33,7 @@ def reading_MetAna_files(filename):
 
 # Tests for NaN_Imputation
 MetAna_I2T = read_aligned_spectra(
-    'MetAna_Imputed2.csv', labels=True, sep=',')  # Transposed
+    'MetAnalyst/MetAna_Imputed2.csv', labels=True, sep=',')  # Transposed
 
 
 def test_NaN_FeatRemove():
@@ -51,7 +51,7 @@ def test_NaN_MinValue():
 
 # Tests for Norm_Feat
 # Normalization by a reference feature only - 301/2791.68 (random choice)
-MetAna_N = reading_MetAna_files('MetAna_Norm.csv')
+MetAna_N = reading_MetAna_files('MetAnalyst/MetAna_Norm.csv')
 
 
 def test_Norm_Values():
@@ -64,7 +64,7 @@ def test_Norm_Values():
 
 
 # Tests for ParetoScal
-MetAna_P = reading_MetAna_files('MetAna_Pareto.csv')  # Pareto Scaling only
+MetAna_P = reading_MetAna_files('MetAnalyst/MetAna_Pareto.csv')  # Pareto Scaling only
 
 
 def test_ParetoScal_values():
