@@ -1,5 +1,6 @@
 import pandas as pd
-from metabolinks import AlignedSpectra
+import metabolinks as mtl
+import metabolinks.transformations as trans
 import numpy as np
 
 """Elimination of features with too many missing values, missing value estimation, normalization methods, generalized logarithmic
@@ -7,73 +8,66 @@ transformation, reference feature estimation and centering and scaling methods. 
 
 
 ### Missing Value Imputation and feature removal
-def NaN_Imputation(Spectra, minsample = 0):
-    """Remove features with a certain % of missing values, replaces remaining ones by half of the minimum value of the original data.
 
-       Spectra: AlignedSpectra object (from metabolinks).
-       minsample: scalar (default: 0); minimum percentage of samples a feature must be to not be removed.
+def NaN_Imputation(df, minsample=0):
+    df = trans.keep_atleast(df, min_samples=minsample)
+    df = trans.fillna_frac_min(df, fraction=0.5)
+    return df
 
-       Returns: AlignedSpectra object (from metabolinks); Equal to Spectra but with some features removed and missing values replaced.
-    """
 
-    Imputated = Spectra
-    df = Imputated.data
-    if minsample != 0:
-        NumValues = Imputated.data.notnull()
-        a = 0
-        for i in range(0, len(NumValues)):
-            if sum(NumValues.iloc[i, :]) < minsample*Imputated.sample_count:
-                # Taking away features that appear in less of minsample% of samples.
-                df = df.drop([df.iloc[a].name])
-            else:
-                a = a + 1
+# def NaN_Imputation(Spectra, minsample = 0):
+#     """Remove features with a certain % of missing values, replaces remaining ones by half of the minimum value of the original data.
 
-    Imputated = AlignedSpectra(
-        df, sample_names = Imputated.sample_names, labels = Imputated.labels)
-    # Replace missing values
-    Imputated.data.fillna(min(Imputated.data.min()/2), inplace = True)
+#        Spectra: AlignedSpectra object (from metabolinks).
+#        minsample: scalar (default: 0); minimum percentage of samples a feature must be to not be removed.
 
-    return Imputated
+#        Returns: AlignedSpectra object (from metabolinks); Equal to Spectra but with some features removed and missing values replaced.
+#     """
 
-def remove_feat(Spectra, minsample = 0):
-    """Remove features that appear in less that minsample% of samples.
+#     Imputated = Spectra
+#     df = Imputated.data
+#     if minsample != 0:
+#         NumValues = Imputated.data.notnull()
+#         a = 0
+#         for i in range(0, len(NumValues)):
+#             if sum(NumValues.iloc[i, :]) < minsample*Imputated.sample_count:
+#                 # Taking away features that appear in less of minsample% of samples.
+#                 df = df.drop([df.iloc[a].name])
+#             else:
+#                 a = a + 1
 
-       Spectra: AlignedSpectra object (from metabolinks).
-       minsample: scalar (default: 0); minimum percentage of samples a feature must be to not be removed.
+#     Imputated = AlignedSpectra(
+#         df, sample_names = Imputated.sample_names, labels = Imputated.labels)
+#     # Replace missing values
+#     Imputated.data.fillna(min(Imputated.data.min()/2), inplace = True)
 
-       Returns: Filtered Aligned Spectra object (from metabolinks).
-    """
-    df = Spectra.data
-    if minsample != 0:
-        NumValues = Spectra.data.notnull()
-        a = 0
-        for i in range(0, len(NumValues)):
-            if sum(NumValues.iloc[i, :]) < minsample*Spectra.sample_count:
-                # Taking away features that appear in less of minsample% of samples.
-                df = df.drop([df.iloc[a].name])
-            else:
-                a = a + 1
+#     return Imputated
 
-    return AlignedSpectra(df, sample_names = Spectra.sample_names, labels = Spectra.labels)
+def remove_feat(df, minsample = 0):
+    return trans.keep_atleast(df, min_samples=minsample)
+
 
 ### Normalizations
-def Norm_Feat(Spectra, Feat_mass, remove=True):
-    """Normalization of a dataset by a reference feature.
+def Norm_Feat(df, Feat_mass, remove=True):
+    return trans.normalize_ref_feature(df, Feat_mass, remove=remove)
 
-       Spectra: AlignedSpectra object (from metabolinks).
-       Feat_mass: scalar; m/z of the reference feature to normalize the sample.
-       remove: bool; True to remove reference feature from data after normalization.
+# def Norm_Feat(Spectra, Feat_mass, remove=True):
+#     """Normalization of a dataset by a reference feature.
 
-       Returns: AlignedSpectra object (from metabolinks); normalized spectra.
-       """
+#        Spectra: AlignedSpectra object (from metabolinks).
+#        Feat_mass: scalar; m/z of the reference feature to normalize the sample.
+#        remove: bool; True to remove reference feature from data after normalization.
 
-    temp = Spectra.data.copy()
-    for i in range(Spectra.sample_count):
-        temp.iloc[:, i] = temp.iloc[:, i]/Spectra.data.loc[Feat_mass][i]
-    if remove:
-        temp = temp.drop([Feat_mass])
+#        Returns: AlignedSpectra object (from metabolinks); normalized spectra.
+#        """
 
-    return AlignedSpectra(temp, sample_names=Spectra.sample_names, labels=Spectra.labels)
+#     temp = Spectra.data.copy()
+#     for i in range(Spectra.sample_count):
+#         temp.iloc[:, i] = temp.iloc[:, i]/Spectra.data.loc[Feat_mass][i]
+#     if remove:
+#         temp = temp.drop([Feat_mass])
+
+#     return AlignedSpectra(temp, sample_names=Spectra.sample_names, labels=Spectra.labels)
 
 
 def Norm_TotalInt (Spectra):
@@ -176,22 +170,9 @@ def glog(Spectra, lamb = True):
 
 
 ### Centering and Scalings (acomodates Missing Values)
-def ParetoScal(Spectra):
-    """Performs Pareto Scaling on an AlignedSpectra object.
 
-       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
-
-       Returns: Aligned Spectra object (from metabolinks); Pareto Scaled Spectra."""
-
-    scaled_aligned = Spectra.data.copy()
-    std = Spectra.data.std(axis = 1)
-    sqstd = std**(0.5)
-    # Applying Pareto Scaling to each feature
-    scaled_aligned = ((Spectra.data.T - Spectra.data.mean(axis = 1))/sqstd).T
-
-    # Return scaled spectra
-    return AlignedSpectra(scaled_aligned, sample_names = Spectra.sample_names, labels = Spectra.labels)
-
+def ParetoScal(df):
+    return trans.pareto_scale(df)
 
 def MeanCentering(Spectra):
     """Performs Mean Centering on an AlignedSpectra object.
@@ -277,10 +258,10 @@ def LevelScal(Spectra, average = True):
 
 
 ### Miscellaneous
-def search_for_ref_feat(Spectra, approx_mass):
+def search_for_ref_feat(df, approx_mass):
     """Estimates a peak m/z to be the reference feature. 
 
-       Spectra: AlignedSpectra object (from metabolinks).
+       df: DataFrame.
        approx_mass: scalar, approximate mass of the reference feature to search for.
 
        Return: scalar, scalar; peak m/z that is estimated to belong to the reference feature (must be present in all samples,
@@ -288,13 +269,13 @@ def search_for_ref_feat(Spectra, approx_mass):
     these two conditios; m/z difference of approximate m/z and estimated m/z.
     """
     # Condition 1: Be at a max length of 1 of the approximate mass given.
-    rest1 = Spectra.data.copy().index[Spectra.data.index < approx_mass+1]
+    rest1 = df.index[df.index < approx_mass + 1]
     rest2 = rest1[rest1 > approx_mass-1]
 
     # Condition 2: Be present in every sample.
     feat_est = []
     for i in range(len(rest2)):
-        if sum(np.isnan(Spectra.data.loc[rest2[i]])) == 0:
+        if sum(np.isnan(df.loc[rest2[i]])) == 0:
             feat_est.append(rest2[i])
 
     if len(feat_est) == 1:
@@ -341,7 +322,7 @@ def spectra_proc(Spectra, minsample=0, Feat_mass=False, remove=True, lamb= 'Fals
     return Spectra
 
 
-def dist_discrim(Spectra, Z, method='average'):
+def dist_discrim(df, Z, method='average'):
     """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
 
        This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
@@ -352,7 +333,7 @@ def dist_discrim(Spectra, Z, method='average'):
     them, the distance given to this set of samples is zero. It returns the measure of the normalized distance as well as a dictionary 
     with all the calculated distances for all set of samples (labels).
 
-       Spectra: AlignedSpectra object (from metabolinks).
+       Spectra: DataFrame.
        Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
        method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
     based on the distances calculated for each set of samples.
@@ -364,24 +345,27 @@ def dist_discrim(Spectra, Z, method='average'):
     # Creating dictionaries with the clusters formed at iteration r and the distance between the elements of said cluster.
     dists = {}
     clust = {}
-    for i in range(0, len(Z)+1):
+    nZ = len(Z)
+    for i in range(0, nZ+1):
         clust[i] = (float(i),)
-    for r in range(0, len(Z)):
-        clust[len(Z)+1+r] = clust[Z[r, 0]] + clust[Z[r, 1]]
-        dists[len(Z)+1+r] = Z[r, 2]
+    for r in range(0, nZ):
+        clust[nZ + 1 + r] = clust[Z[r, 0]] + clust[Z[r, 1]]
+        dists[nZ + 1 + r] = Z[r, 2]
 
-    #Creating dictionary with number of samples for each group    
+    #Creating dictionary with number of samples for each group
+    unique_labels = list(df.ms.unique_labels)
+    n_unique = len(unique_labels)
+    labels = list(df.ms.labels)
+    
     sample_number = {}
-    for i in Spectra.unique_labels():
-        sample_number[i] = Spectra.labels.count(i)
+    for label in unique_labels:
+        sample_number[label] = len(df.ms.samples_of(label))
 
     # Calculating discriminating distances of a set of samples with the same label and storing in a dictionary.
     separaT = 0
-    separa = dict(zip(Spectra.unique_labels(), [
-                  0] * len(Spectra.unique_labels())))
+    separa = {label: [0]*n_unique for label in unique_labels}
     for i in clust:
-        label = [Spectra.labels[int(clust[i][j])]
-                     for j in range(len(clust[i]))]
+        label = [labels[int(clust[i][j])] for j in range(len(clust[i]))]
         #check if cluster length = the number of samples of the group of one of the samples that belong to the cluster.
         if len(clust[i]) == sample_number[label[0]]:
             #label = [Spectra.labels[int(clust[i][j])]
@@ -395,11 +379,11 @@ def dist_discrim(Spectra, Z, method='average'):
 
     # Method to quantify a measure of a global discriminating distance for a linkage matrix.
     if method == 'average':
-        separaM = separaT/len(Spectra.unique_labels())
+        separaM = separaT / n_unique
     elif method == 'median':
         separaM = np.median(list(separa.values()))
-        if separaM == 0:
-            separaM = None
+        # if separaM == 0:
+        #     separaM = None
     else:
         raise ValueError(
             'Method not recognized. Available methods: "average", "median".')
