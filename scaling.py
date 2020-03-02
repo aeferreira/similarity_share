@@ -2,11 +2,11 @@ import pandas as pd
 from metabolinks import AlignedSpectra
 import numpy as np
 
-"""Elimination of features with too many missing values, missing value estimation, normalization by reference feature,
-generalized logarithmic transformation, reference feature estimation and Pareto Scaling of data. Discrimination distance of
-hierarchical clustering."""
+"""Elimination of features with too many missing values, missing value estimation, normalization methods, generalized logarithmic
+transformation, reference feature estimation and centering and scaling methods. Discrimination distance of hierarchical clustering."""
 
 
+### Missing Value Imputation
 def NaN_Imputation(Spectra, minsample=0):
     """Remove features with a certain % of missing values, replaces remaining ones by half of the minimum value of the original data.
 
@@ -37,6 +37,7 @@ def NaN_Imputation(Spectra, minsample=0):
     return Imputated
 
 
+### Normalizations
 def Norm_Feat(Spectra, Feat_mass, remove=True):
     """Normalization of a dataset by a reference feature.
 
@@ -55,6 +56,7 @@ def Norm_Feat(Spectra, Feat_mass, remove=True):
 
     return AlignedSpectra(temp, sample_names=Spectra.sample_names, labels=Spectra.labels)
 
+
 def Norm_TotalInt (Spectra):
     """Normalization of a dataset by the total peak intensity in each Spectra.
 
@@ -63,6 +65,7 @@ def Norm_TotalInt (Spectra):
        Returns: AlignedSpectra object (from metabolinks); normalized spectra.
     """
     return AlignedSpectra(Spectra.data/Spectra.data.sum(), sample_names=Spectra.sample_names, labels = Spectra.labels)
+
 
 #Needs double-checking
 def Norm_PQN(Spectra, ref_sample = 'mean'):
@@ -135,6 +138,7 @@ def Norm_Quantile(Spectra, ref_type = 'mean'):
     return AlignedSpectra(norm.replace({0:np.nan}), sample_names = Spectra.sample_names, labels = Spectra.labels)
 
 
+### Transformations
 def glog(Spectra, lamb = True):
     """Performs Generalized Logarithmic Transformation on a Spectra (same as MetaboAnalyst's transformation).
 
@@ -152,7 +156,7 @@ def glog(Spectra, lamb = True):
     return AlignedSpectra(y, sample_names = Spectra.sample_names, labels = Spectra.labels)
 
 
-# Function to do Pareto Scaling, it accomodates Missing Values.
+### Centering and Scalings (acomodates Missing Values)
 def ParetoScal(Spectra):
     """Performs Pareto Scaling on an AlignedSpectra object.
 
@@ -161,26 +165,62 @@ def ParetoScal(Spectra):
        Returns: Aligned Spectra object (from metabolinks); Pareto Scaled Spectra."""
 
     scaled_aligned = Spectra.data.copy()
-    for j in range(0, len(scaled_aligned)):
-        std = Spectra.data.iloc[j, ].std()
-        sqstd = std**(0.5)
-        values = Spectra.data.iloc[j, ]
-        # Apply Pareto Scaling to each value
-        values = (values - values.mean())/sqstd
-        # Replace not null values by the scaled values
-        if len(values) == Spectra.sample_count:
-            scaled_aligned.iloc[j, :] = values
-        else:
-            a = 0
-            for i in range(0, len(Spectra.sample_count)):
-                if scaled_aligned.notnull().iloc[j, i]:
-                    scaled_aligned.iloc[j, i] = values.iloc[a, 0]
-                    a = a + 1
+    std = Spectra.data.std(axis = 1)
+    sqstd = std**(0.5)
+    # Applying Pareto Scaling to each feature
+    scaled_aligned = ((Spectra.data.T - Spectra.data.mean(axis = 1))/sqstd).T
 
     # Return scaled spectra
-    return AlignedSpectra(scaled_aligned, sample_names=Spectra.sample_names, labels=Spectra.labels)
+    return AlignedSpectra(scaled_aligned, sample_names = Spectra.sample_names, labels = Spectra.labels)
 
 
+def MeanCentering(Spectra):
+    """Performs Mean Centering on an AlignedSpectra object.
+
+       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
+
+       Returns: Aligned Spectra object (from metabolinks); Mean Centered Spectra."""
+
+    return AlignedSpectra((Spectra.data.T - Spectra.data.mean(axis = 1)).T, sample_names = Spectra.sample_names, labels = Spectra.labels)
+
+
+def AutoScal(Spectra):
+    """Performs Autoscaling on an AlignedSpectra object.
+
+       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
+
+       Returns: Aligned Spectra object (from metabolinks); Auto Scaled Spectra."""
+
+    scaled_aligned = Spectra.data.copy()
+    std = Spectra.data.std(axis = 1)
+    # Applying Autoscaling
+    scaled_aligned = ((Spectra.data.T - Spectra.data.mean(axis = 1))/std).T
+
+    # Return scaled spectra
+    return AlignedSpectra(scaled_aligned, sample_names = Spectra.sample_names, labels = Spectra.labels)
+
+
+def RangeScal(Spectra):
+    """Performs Range Scaling on an AlignedSpectra object.
+
+       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
+
+       Returns: Aligned Spectra object (from metabolinks); Ranged Scaled Spectra."""
+
+    scaled_aligned = Spectra.data.copy()
+    ranges = Spectra.data.max(axis = 1) - Spectra.data.min(axis = 1) # Defining range for every feature
+    # Applying Range scaling to each feature
+    for j in range(0, len(scaled_aligned)):
+        if ranges.iloc[j] == 0: # No difference between max and min values
+            scaled_aligned.iloc[j, :] = Spectra.data.iloc[j, ]
+        else:
+            scaled_aligned.iloc[j, :] = (Spectra.data.iloc[j, ] - Spectra.data.iloc[j, ].mean())/ranges.iloc[j]
+
+    # Return scaled spectra
+    return AlignedSpectra(scaled_aligned, sample_names = Spectra.sample_names, labels = Spectra.labels)
+
+
+### Miscellaneous
 def search_for_ref_feat(Spectra, approx_mass):
     """Estimates a peak m/z to be the reference feature. 
 
@@ -206,7 +246,7 @@ def search_for_ref_feat(Spectra, approx_mass):
 
     elif len(feat_est) == 0:
         raise ValueError ('No feature is present in all sample around approx_mass.')
-        #return print('Error - No feature is present in all sample around approx_mass')
+        # return print('Error - No feature is present in all sample around approx_mass')
 
     # Tiebraker: Be closer to the approximate mass (m/z) given than other peaks that fulfill previous conditions.
     else:
@@ -215,6 +255,7 @@ def search_for_ref_feat(Spectra, approx_mass):
             mass_diff.append(abs(feat_est[i]-approx_mass))
 
         return feat_est[mass_diff.index(min(mass_diff))], min(mass_diff)
+
 
 def spectra_proc(Spectra, minsample=0, Feat_mass=False, remove=True, lamb= 'False', Pareto = True):
     """Performs any combination of Missing Value Imputation, Normalization by a reference feature, Generalized Logarithmic 
