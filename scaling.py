@@ -175,7 +175,7 @@ def glog(Spectra, lamb = True):
     return AlignedSpectra(y, sample_names = Spectra.sample_names, labels = Spectra.labels)
 
 
-### Centering and Scalings (acomodates Missing Values)
+### Centering and Scalings (accommodates Missing Values)
 def ParetoScal(Spectra):
     """Performs Pareto Scaling on an AlignedSpectra object.
 
@@ -271,6 +271,8 @@ def LevelScal(Spectra, average = True):
         scaled_aligned = ((Spectra.data.T - mean)/mean).T
     elif average == False:
         scaled_aligned = ((Spectra.data.T - mean)/Spectra.data.median(axis = 1)).T
+    else:
+        raise ValueError ('Average is a boolean argument. Only True or False accepted.')
 
     # Return scaled spectra
     return AlignedSpectra(scaled_aligned, sample_names = Spectra.sample_names, labels = Spectra.labels)
@@ -301,7 +303,7 @@ def search_for_ref_feat(Spectra, approx_mass):
         return feat_est[0], abs(feat_est[0] - approx_mass)
 
     elif len(feat_est) == 0:
-        raise ValueError ('No feature is present in all sample around approx_mass.')
+        raise ValueError ('No feature is present in all samples around approx_mass.')
         # return print('Error - No feature is present in all sample around approx_mass')
 
     # Tiebraker: Be closer to the approximate mass (m/z) given than other peaks that fulfill previous conditions.
