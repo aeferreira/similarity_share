@@ -3,7 +3,6 @@ import pandas as pd
 import scipy.spatial.distance as dist
 import scipy.cluster.hierarchy as hier 
 import scipy.stats as stats
-import scaling as sca
 import sklearn.cluster as skclust
 import sklearn.ensemble as skensemble
 import random as rd
@@ -11,7 +10,11 @@ from sklearn.model_selection import train_test_split, cross_val_score, Stratifie
 from sklearn.metrics import cohen_kappa_score, mean_squared_error, r2_score
 from sklearn.cross_decomposition import PLSRegression
 from matplotlib import cm
-from metabolinks import AlignedSpectra
+#from metabolinks import AlignedSpectra
+
+import scaling as sca
+import metabolinks as mtl
+import metabolinks.transformations as trans
 
 #Apart from mergerank, other functions are incredibly specific to the objectives of this set of notebooks.
 #Functions present are for the different kinds of multivariate analysis made in the Jupyter Notebooks
@@ -51,7 +54,7 @@ def mergerank(Z):
 
 #K-means Clustering
 #Discrimination Distance for k-means
-def Kmeans_discrim(Spectra, method = 'average'):
+def Kmeans_discrim(df, method = 'average'):
     """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in k-means clustering.
 
        This function performs a k-means clustering with the default parameters of sklearn.cluster.KMeans except the number of clusters
@@ -61,7 +64,7 @@ def Kmeans_discrim(Spectra, method = 'average'):
     and the closest centroid. The distance is normalized by dividing it by the maximum distance between any 2 cluster centroids. It then
     returns the mean/median of the discrimination distances of all groups and a dictionary with each individual discrimination distance.
 
-       Spectra: AlignedSpectra object (from metabolinks).
+       df: Pandas DataFrame.
        method: str (default: "average"); Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
     based on the distances calculated for each set of samples.
 
@@ -69,25 +72,25 @@ def Kmeans_discrim(Spectra, method = 'average'):
     samples.
     """
     #Application of the K-means clustering with n_clusters equal to the number of unique labels.
-    Kmean2 = skclust.KMeans(n_clusters = len(Spectra.unique_labels()))
-    Kmean = Kmean2.fit(Spectra.data.T)
-    Correct_Groupings = dict(zip(Spectra.unique_labels(), [
-                      0] * len(Spectra.unique_labels())))
+    n_labels = df.ms.label_count
+    unique_labels = list(df.ms.unique_labels)
+    all_labels = list(df.ms.labels)
+    Kmean2 = skclust.KMeans(n_clusters = n_labels)
+    Kmean = Kmean2.fit(df.values.T)
+    Correct_Groupings = {label: 0 for label in unique_labels}
 
-    #Creating dictionary with number of samples for each group
-    sample_number = {}
-    for i in Spectra.unique_labels():
-        sample_number[i] = Spectra.labels.count(i)
+    # Creating dictionary with number of samples for each group
+    sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
 
-    #Making a matrix with the pairwise distances between any 2 clusters.                      
+    #Making a matrix with the pairwise distances between any 2 clusters.
     distc = dist.pdist(Kmean.cluster_centers_) 
     distma = dist.squareform(distc)
     maxi = max(distc) #maximum distance (to normalize discrimination distacnces).
     #Check if the two conditions are met (all samples in one cluster and only them) and calculation of discrimination distance.
-    for i in Spectra.unique_labels():
-        if (Kmean.labels_ == Kmean.labels_[Spectra.labels.index(i)]).sum() == sample_number[i]:
-            Correct_Groupings[i] = min(distma[Kmean.labels_[Spectra.labels.index(i)],
-                    :][distma[Kmean.labels_[Spectra.labels.index(i)],:]!=0])/maxi
+    for i in unique_labels:
+        if (Kmean.labels_ == Kmean.labels_[all_labels.index(i)]).sum() == sample_number[i]:
+            Correct_Groupings[i] = min(distma[Kmean.labels_[all_labels.index(i)],
+                    :][distma[Kmean.labels_[all_labels.index(i)],:]!=0])/maxi
 
     #Method to quantify a measure of a global discriminating distance for k-means clustering.            
     if method == 'average':
@@ -104,7 +107,7 @@ def Kmeans_discrim(Spectra, method = 'average'):
 
 
 #SMOTE oversampling method
-def fast_SMOTE(Spectra, binary = False, max_sample = 0):
+def fast_SMOTE(df, binary = False, max_sample = 0):
     """Performs a fast oversampling of a set of spectra based on the simplest SMOTE method.
 
        New samples are artificially made using the formula: New_Sample = Sample1 + random_value * (Sample2 - Sample1), where the 
@@ -120,13 +123,17 @@ def fast_SMOTE(Spectra, binary = False, max_sample = 0):
 
        Returns: AlignedSpectra object (from metabolinks); Spectra with extra samples originated with the name 'Arti(Sample1)-(Sample2)'.
     """
-    Newdata = Spectra.data.copy()  
+    Newdata = df.copy()  
+    n_unique_labels = df.ms.label_count
+    unique_labels = df.ms.unique_labels
+    all_labels = list(df.ms.labels)
+    n_all_labels = len(all_labels)
     nlabels = []
     nnew = {}
-    for i in range(len(Spectra.unique_labels())):
+    for i in range(n_unique_labels):
         #See how many samples there are in the dataset for each unique_label of the dataset
-        samples = [Spectra.data.iloc[:,n] for n, x in enumerate(Spectra.labels) if x == Spectra.unique_labels()[i]]
-        if len(samples)>1: #if len(samples) = 1 - no pair of 2 samples to make a new one.
+        samples = [df.iloc[:,n] for n, x in enumerate(all_labels) if x == unique_labels[i]]
+        if len(samples) > 1: #if len(samples) = 1 - no pair of 2 samples to make a new one.
             #Ensuring all combinations of samples are used to create new samples.
             n = len(samples) - 1
             for j in range(len(samples)):
@@ -141,33 +148,31 @@ def fast_SMOTE(Spectra, binary = False, max_sample = 0):
                         Newdata['Arti' + samples[j].name + '-' + samples[n-m].name] = samples[j] + random[0]*Vector
                     m = m + 1
                     #Giving the correct label to each new sample.
-                    nlabels.append(Spectra.unique_labels()[i])
+                    nlabels.append(unique_labels[i])
 
         #Number of samples added for each unique label
         if i == 0:
-            nnew[Spectra.unique_labels()[i]] = len(nlabels)
+            nnew[unique_labels[i]] = len(nlabels)
         else:
-            nnew[Spectra.unique_labels()[i]] = len(nlabels) - sum(nnew.values())
+            nnew[unique_labels[i]] = len(nlabels) - sum(nnew.values())
 
     #Creating dictionary with number of samples for each group
-    sample_number = {}
-    for i in Spectra.unique_labels():
-        sample_number[i] = Spectra.labels.count(i)
+    sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
 
     #Choosing samples for each group/labels to try and get max_samples in total of that label.
     if max_sample >= max(sample_number.values()):
         #List with names of the samples chosen for the final dataset
-        chosen_samples = list(Spectra.data.columns)
+        chosen_samples = list(df.columns)
         nlabels = []
         loca = 0
-        for i in Spectra.unique_labels():
+        for i in unique_labels:
             #Number of samples to add
             n_choose = max_sample - sample_number[i]
             #If there aren't enough new samples to get the total max_samples, choose all of them.
             if n_choose > nnew[i]:
                 n_choose = nnew[i]
             #Random choice of the samples for each label that will be added to the original dataset
-            chosen_samples.extend(rd.sample(list(Newdata.columns[len(Spectra.labels) + loca: len(Spectra.labels)
+            chosen_samples.extend(rd.sample(list(Newdata.columns[n_all_labels + loca: n_all_labels
                                                                  + loca + nnew[i]]),n_choose))
             loca = loca + nnew[i]
             nlabels.extend([i] * n_choose)
@@ -176,13 +181,14 @@ def fast_SMOTE(Spectra, binary = False, max_sample = 0):
         Newdata = Newdata[chosen_samples]
 
     #Creating the label list for the AlignedSpectra object
-    Newlabels = Spectra.labels + nlabels
-    return AlignedSpectra(Newdata, labels = Newlabels)
+    Newlabels = all_labels + nlabels
+    Newdata.ms.labels = Newlabels
+    return Newdata
 
 #Random Forests Functions - simple_RF, RF_M3 (Method 3), RF_M4 (Method 4)
 
 #simple_RF - RF application and result extraction.
-def simple_RF(Spectra, iter_num = 20, n_fold = 3, n_trees = 200):
+def simple_RF(df, iter_num = 20, n_fold = 3, n_trees = 200):
     """Performs k-fold cross validation on random forest classification of a dataset n times giving its accuracy and ordered most
     important features.
 
@@ -196,7 +202,8 @@ def simple_RF(Spectra, iter_num = 20, n_fold = 3, n_trees = 200):
     and each group), descending ordered list of tuples with index number of feature, feature importance and name of feature.
     """
     #Setting up variables for result storing
-    imp_feat = np.zeros((iter_num*n_fold, len(Spectra.data)))
+    imp_feat = np.zeros((iter_num*n_fold, len(df)))
+    all_labels = list(df.ms.labels)
     cv = []
     f = 0
     for i in range(iter_num): #number of times random forests cross-validation is made
@@ -204,11 +211,11 @@ def simple_RF(Spectra, iter_num = 20, n_fold = 3, n_trees = 200):
         kf = StratifiedKFold(n_fold, shuffle = True)
         CV = []
         #Repeating for each of the n groups the random forest model fit and classification
-        for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+        for train_index, test_index in kf.split(df.T, all_labels):
             #Random Forest setup and fit
             rf = skensemble.RandomForestClassifier(n_estimators = n_trees)
-            X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
-            y_train, y_test = [Spectra.labels[i] for i in train_index], [Spectra.labels[i] for i in test_index]
+            X_train, X_test = df[df.columns[train_index]].T, df[df.columns[test_index]].T
+            y_train, y_test = [all_labels[i] for i in train_index], [all_labels[i] for i in test_index]
             rf.fit(X_train, y_train)
 
             #Obtaining results with the test group
@@ -222,13 +229,13 @@ def simple_RF(Spectra, iter_num = 20, n_fold = 3, n_trees = 200):
     imp_feat_sum = sorted(enumerate(imp_feat_sum), key = lambda x: x[1], reverse = True)
     imp_feat_ord = []
     for i,j in imp_feat_sum:
-        imp_feat_ord.append((i , j, Spectra.data.index[i]))
+        imp_feat_ord.append((i , j, df.index[i]))
     
     return cv, imp_feat_ord
 
 #In disuse
 #Function for method 3 - SMOTE on the training set
-def RF_M3(Spectra, iter_num = 20, binary = False, test_size = 0.1, n_trees = 200):
+def RF_M3(df, iter_num = 20, binary = False, test_size = 0.1, n_trees = 200):
     """Performs random forest classification of a dataset (oversampling the training set) n times giving its mean score, Kappa Cohen 
     score, most important features and cross-validation score.
 
@@ -242,18 +249,21 @@ def RF_M3(Spectra, iter_num = 20, binary = False, test_size = 0.1, n_trees = 200
        Returns: (scalar, scalar, list of tuples); mean of the scores of the random forests, mean of the Cohen's Kappa score of 
     the random forests, descending ordered list of tuples with index number of feature, feature importance and feature name.
     """
-    imp_feat = np.zeros((iter_num, len(Spectra.data)))
+    imp_feat = np.zeros((iter_num, len(df)))
     cks = []
     scores = []
+    all_labels = list(df.ms.labels)
 
     for i in range(iter_num):
         #Splitting data and performing SMOTE on the training set.
-        X_train, X_test, y_train, y_test = train_test_split(Spectra.data.T, Spectra.labels, test_size=test_size)
-        X_Aligned = AlignedSpectra(X_train.T, labels = y_train)
+        X_train, X_test, y_train, y_test = train_test_split(df.T, all_labels, test_size=test_size)
+        #X_Aligned = AlignedSpectra(X_train.T, labels = y_train)
+        X_Aligned = X_train.T
+        X_Aligned.ms.labels = y_train
         Spectra_S = fast_SMOTE(X_Aligned, binary = binary)
         #Random Forest setup and fit.
         rf = skensemble.RandomForestClassifier(n_estimators = n_trees)
-        rf.fit(Spectra_S.data.T, Spectra_S.labels)
+        rf.fit(Spectra_S.T, Spectra_S.ms.labels)
         
         #Extracting the results of the random forest model built
         y_pred = rf.predict(X_test)
@@ -266,7 +276,7 @@ def RF_M3(Spectra, iter_num = 20, binary = False, test_size = 0.1, n_trees = 200
     imp_feat_sum = sorted(enumerate(imp_feat_sum), key = lambda x: x[1], reverse = True)
     imp_feat_ord = []
     for i,j in imp_feat_sum:
-        imp_feat_ord.append((i , j, Spectra.data.index[i]))
+        imp_feat_ord.append((i , j, df.index[i]))
 
     return np.mean(scores), np.mean(cks), imp_feat_ord
 
@@ -462,7 +472,7 @@ def Dendrogram_Sim(Z, zdist, Y, ydist, type = 'cophenetic', Trace = False):
 
 
 #PLS-DA functions
-def optim_PLS(Spectra, matrix, max_comp = 50, n_fold = 3):
+def optim_PLS(df, matrix, max_comp = 50, n_fold = 3):
     """Searches for an optimum number of components to use in PLS-DA by accuracy (3-fold cross validation) and mean-squared errors.
 
        Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
@@ -473,6 +483,7 @@ def optim_PLS(Spectra, matrix, max_comp = 50, n_fold = 3):
 
        Returns: (list, list, list), 3-fold cross-validation score and r2 score and mean squared errors for all components searched.
     """
+    all_labels = list(df.ms.labels)
     #Preparating lists to store results
     CVs = []
     CVr2s = []
@@ -486,9 +497,9 @@ def optim_PLS(Spectra, matrix, max_comp = 50, n_fold = 3):
         #Splitting data into 3 groups for 3-fold cross-validation
         kf = StratifiedKFold(n_fold, shuffle = True)
         #Repeating for each of the 3 groups
-        for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+        for train_index, test_index in kf.split(df.T, all_labels):
             plsda = PLSRegression(n_components = i, scale = False)
-            X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
+            X_train, X_test = Spectra.data[df.columns[train_index]].T, Spectra.data[df.columns[test_index]].T
             y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
 
             #Fitting the model
@@ -529,7 +540,7 @@ def _calculate_vips(model):
 
     return vips
 
-def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type = 'Coef', figures = False):
+def model_PLSDA(df, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type = 'Coef', figures = False):
     """Perform PLS-DA on an AlignedSpectra with 3-fold cross-validation and obtain the model's accuracy and important features.
 
        Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
@@ -552,7 +563,8 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type =
     Accuracy = []
     Imp_Feat = np.zeros((iter_num*n_fold, len(Spectra.data)))
     f = 0
-    
+    all_labels = list(df.ms.labels)
+
     #Number of iterations equal to iter_num
     for i in range(iter_num):
         #Splitting data into 3 groups for 3-fold cross-validation
@@ -563,9 +575,9 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type =
         cvr2 = []
 
         #Repeating for each of the 3 groups
-        for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+        for train_index, test_index in kf.split(df.T, all_labels):
             plsda = PLSRegression(n_components = n_comp, scale = False)
-            X_train, X_test = Spectra.data[Spectra.data.columns[train_index]].T, Spectra.data[Spectra.data.columns[test_index]].T
+            X_train, X_test = df[df.columns[train_index]].T, df[df.columns[test_index]].T
             y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
             #Fitting the model
             plsda.fit(X=X_train,Y=y_train)
@@ -613,13 +625,13 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type =
                 for n, x in enumerate(LV_score.values): 
                     if n%2 == 0:
                         i = i + 1
-                    label = Spectra.unique_labels()[i]
+                    label = df.ms.unique_labels[i]
                     #label = LV_score.index.values[n]
                     ax.text(x[0],x[1],label, fontsize = 8)
 
 
         #Calculating the accuracy of the group predicted and storing score results
-        Accuracy.append(certo/len(Spectra.labels))
+        Accuracy.append(certo/len(all_labels))
         CV.append(np.mean(cv))
         CVR2.append(np.mean(cvr2))
 
@@ -628,11 +640,11 @@ def model_PLSDA(Spectra, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type =
     Imp_sum = sorted(enumerate(Imp_sum), key = lambda x: x[1], reverse = True)
     Imp_ord = []
     for i,j in Imp_sum:
-        Imp_ord.append((i , j, Spectra.data.index[i]))
+        Imp_ord.append((i , j, df.index[i]))
 
     return Accuracy, CV, CVR2, Imp_ord
 
-def permutation_PLSDA(Spectra, n_comp, n_fold = 3, iter_num = 100, figures = False):
+def permutation_PLSDA(df, n_comp, n_fold = 3, iter_num = 100, figures = False):
     """Perform permutation test of PLS-DA on an AlignedSpectra with 3-fold cross-validation used to obtain the model's and its
     permutations accuracy.
 
@@ -650,17 +662,20 @@ def permutation_PLSDA(Spectra, n_comp, n_fold = 3, iter_num = 100, figures = Fal
     Accuracy = []
     
     #Setting list of columns to shuffle and dataframe of the data to put columns in NewC shuffled order
-    NewC = list(Spectra.data.columns.copy())
-    df = Spectra.data.copy()
+    NewC = list(df.columns.copy())
+    df = df.copy()
 
     #Matrix formation
-    if len(Spectra.unique_labels()) > 2:
+    all_labels = list(df.ms.labels)
+    unique_labels = df.unique_labels
+
+    if len(unique_labels) > 2:
         #Setting up the y matrix for when there are more than 2 classes (multi-class)
-        matrix = pd.get_dummies(Spectra.labels)
-        matrix = matrix[Spectra.unique_labels()]
+        matrix = pd.get_dummies(all_labels)
+        matrix = matrix[unique_labels]
     else:
         #Setting the y list when there are only 2 classes
-        matrix = Spectra.labels
+        matrix = unique_labels
 
     #Splitting data into n_fold groups for n-fold cross-validation
     kf = StratifiedKFold(n_fold, shuffle = True, random_state = np.random.randint(1000000000))
@@ -672,7 +687,7 @@ def permutation_PLSDA(Spectra, n_comp, n_fold = 3, iter_num = 100, figures = Fal
         certo = 0
 
         #Repeating for each of the n groups
-        for train_index, test_index in kf.split(Spectra.data.T, Spectra.labels):
+        for train_index, test_index in kf.split(df.T, all_labels):
             #plsda model building for each of the n stratified groups amde
             plsda = PLSRegression(n_components = n_comp, scale = False)
             X_train, X_test = temp[temp.columns[train_index]].T, temp[temp.columns[test_index]].T
@@ -690,7 +705,7 @@ def permutation_PLSDA(Spectra, n_comp, n_fold = 3, iter_num = 100, figures = Fal
                     certo = certo + 1 #Correct prediction
 
         #Calculating the accuracy of the group predicted and storing score results (for original and permutated labels)
-        Accuracy.append(certo/len(Spectra.labels))
+        Accuracy.append(certo/len(all_labels))
         #Shuffle dataset labels - 1 permutation of the labels
         np.random.shuffle(NewC)
 

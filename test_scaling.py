@@ -21,7 +21,7 @@ def reading_MetAna_file(filename, has_labels=False):
         df = pd.read_csv(filename, header=0, sep=',', index_col=0).rename_axis('sample', axis='columns')
     df = df.rename_axis('mz/rt', axis='index')
     # these may exist, repeating information
-    df = df.drop(columns=["mz","rt"], errors='ignore')
+    df = df.drop(columns=["mz", "rt"], errors='ignore')
     if not has_labels:
         # force labels
         df = mtl.add_labels(df, ['KO', 'WT'])
@@ -87,25 +87,29 @@ def test_ParetoScal_values():
 
 def test_Ref_Feat_finding2():
     RefEst_Neg = sca.search_for_ref_feat(aligned_all_neg, 554.2615)
-    assert RefEst_Neg[0] == 554.26202000000001
+    assert RefEst_Neg[0] == approx(554.26202000000001)
 
 
 def test_Ref_Feat_finding():
     RefEst_Neg = sca.search_for_ref_feat(MetAna_O, 300.5)
-    assert RefEst_Neg[0] == 301
-
+    assert RefEst_Neg[0] == approx(301)
 
 # Tests for dist_discrim
-Imputated_neg = sca.NaN_Imputation(aligned_all_neg, 0)
-Euc_neg = sca.ParetoScal(Imputated_neg)
-dist_euc_neg = dist.pdist(Euc_neg.T, metric='euclidean')
-Z_euc_neg = hier.linkage(dist_euc_neg, method='average')
+# Imputated_neg = sca.NaN_Imputation(aligned_all_neg, 0)
+# Euc_neg = sca.ParetoScal(Imputated_neg)
+preprocessed = sca.NaN_Imputation(aligned_all_neg, 0).pipe(sca.ParetoScal)
 
-discrim_ave = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='average')
-discrim_med = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='median')
+dist_euclidian = dist.pdist(preprocessed.T, metric='euclidean')
+Z_euc = hier.linkage(dist_euclidian, method='average')
+
+#discrim = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')
 
 def test_dist_dicrim_average():
-    assert str(discrim_ave[0]) == str(np.array(list(discrim_ave[1].values())).mean())
+    global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')
+    # assert str(discrim_ave[0]) == str(np.array(list(discrim_ave[1].values())).mean())
+    assert global_dist == approx(np.array(list(discrims.values())).mean())
+
 
 def test_dist_dicrim_median():
-    assert discrim_med[0] == np.median(list(discrim_med[1].values()))
+    global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='median')
+    assert global_dist == approx(np.median(list(discrims.values())))

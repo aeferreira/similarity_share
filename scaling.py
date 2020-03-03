@@ -14,35 +14,6 @@ def NaN_Imputation(df, minsample=0):
     df = trans.fillna_frac_min(df, fraction=0.5)
     return df
 
-
-# def NaN_Imputation(Spectra, minsample = 0):
-#     """Remove features with a certain % of missing values, replaces remaining ones by half of the minimum value of the original data.
-
-#        Spectra: AlignedSpectra object (from metabolinks).
-#        minsample: scalar (default: 0); minimum percentage of samples a feature must be to not be removed.
-
-#        Returns: AlignedSpectra object (from metabolinks); Equal to Spectra but with some features removed and missing values replaced.
-#     """
-
-#     Imputated = Spectra
-#     df = Imputated.data
-#     if minsample != 0:
-#         NumValues = Imputated.data.notnull()
-#         a = 0
-#         for i in range(0, len(NumValues)):
-#             if sum(NumValues.iloc[i, :]) < minsample*Imputated.sample_count:
-#                 # Taking away features that appear in less of minsample% of samples.
-#                 df = df.drop([df.iloc[a].name])
-#             else:
-#                 a = a + 1
-
-#     Imputated = AlignedSpectra(
-#         df, sample_names = Imputated.sample_names, labels = Imputated.labels)
-#     # Replace missing values
-#     Imputated.data.fillna(min(Imputated.data.min()/2), inplace = True)
-
-#     return Imputated
-
 def remove_feat(df, minsample = 0):
     return trans.keep_atleast(df, min_samples=minsample)
 
@@ -152,22 +123,15 @@ def Norm_Quantile(Spectra, ref_type = 'mean'):
 
 
 ### Transformations
-def glog(Spectra, lamb = True):
+def glog(Spectra, lamb=None):
     """Performs Generalized Logarithmic Transformation on a Spectra (same as MetaboAnalyst's transformation).
 
-       Spectra: AlignedSpectra object (from metabolinks).
-       lamb: scalar, optional (default: True);  transformation parameter, if True lamb = minimum value in the data divided by 10.
+    df: Pandas DataFrame.
+    lamb: scalar, optional (default: minimum value in the data divided by 10); transformation parameter lambda.
 
-       Returns: AlignedSpectra object (from metabolinks); transformed spectra by a factor of log(y + (y**2 + lamb**2)**0.5).
-       """
-    #Defining lambda
-    if lamb == True:
-        lamb = min(Spectra.data.min()/10)
-    #Applying the equation
-    y = Spectra.data.copy()
-    y = np.log2((y + (y**2 + lamb**2)**0.5)/2)
-    return AlignedSpectra(y, sample_names = Spectra.sample_names, labels = Spectra.labels)
+    Returns: DataFrame transformed as log2(y + (y**2 + lamb**2)**0.5)."""
 
+    return trans.glog(df, lamb=lamb)
 
 ### Centering and Scalings (acomodates Missing Values)
 
@@ -294,166 +258,133 @@ def search_for_ref_feat(df, approx_mass):
         return feat_est[mass_diff.index(min(mass_diff))], min(mass_diff)
 
 
-def spectra_proc(Spectra, minsample=0, Feat_mass=False, remove=True, lamb= 'False', Pareto = True):
+def spectra_proc(df, minsample=0, Feat_mass=None, remove=True, do_glog=False, lamb=None, Pareto=True):
     """Performs any combination of Missing Value Imputation, Normalization by a reference feature, Generalized Logarithmic 
     Transformation and Pareto Scaling of the dataset.
 
-       Spectra: Aligned Spectra object (from metabolinks). It can include missing values.
-       minsample: scalar, optional; number between 0 and 1, minsample*100 represents the minimum % of samples where the feature must 
-    be present in order to not be removed.
-       Feat_mass: scalar (default: False); m/z of the reference feature to normalize the sample. False - Normalization is not performed.
-       remove: bool (deafult: True); True to remove reference feature from data after normalization.
-       lamb: scalar (default - 'False');  transformation parameter, if 'False', glog transformation is not performed.
+       df: Pandas DataFrame. Can contain missing values.
+       minsample: scalar, optional; number between 0 and 1,
+       minsample*100 represents the minimum % of samples
+       where the feature must be present in order to not be removed.
+       
+       Feat_mass: index label; m/z of the reference feature to normalize the sample.
+       None - Normalization is not performed.
+       remove: bool (default: True); True to remove reference feature from data after normalization.
+       
+       do_glog: bool; Perform or not glog transformation
+       lamb: scalar ; transformation parameter for glog
+
        Pareto: bool (default - True); if True performs Pareto Scaling.
 
-       Returns: Processed Aligned Spectra object (from metabolinks).
+       Returns: Processed DataFrame.
     """
     if minsample != 100: #Missing Value Imputation
-        Spectra = NaN_Imputation(Spectra, minsample)
+        df = NaN_Imputation(df, minsample)
 
-    if Feat_mass != False: #Normalization by a reference feature
-        Spectra = Norm_Feat(Spectra, Feat_mass, remove = remove)
+    if Feat_mass is not None: #Normalization by a reference feature
+        df = Norm_Feat(df, Feat_mass, remove=remove)
 
-    if lamb != 'False': #glog transformation
-        Spectra = glog(Spectra, lamb)
+    if do_glog: #glog transformation
+        df = glog(df, lamb)
 
-    if Pareto != False: #Pareto Scaling
-        Spectra = ParetoScal(Spectra)
-    return Spectra
+    if Pareto: #Pareto Scaling
+        df = ParetoScal(df)
+    return df
 
-def dist_discrim(Spectra, Z, method='average'):
-    """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
+def dist_discrim(df, Z, method='average'):
+    """Give a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
 
-       This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
-    hierarchical clustering linkage matrix and the labels (in Spectra) of each sample. For each set of samples with the same label, it 
-    calculates the difference of distances between where the cluster with all the set of samples was formed and the cluster that joins 
-    those set of samples with another samples. The normalization of this distance is made by dividing said difference by the max 
-    distance between any two cluster. If the samples with the same label aren't all in the same cluster before any other sample joins 
-    them, the distance given to this set of samples is zero. It returns the measure of the normalized distance as well as a dictionary 
-    with all the calculated distances for all set of samples (labels).
+        This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
+        hierarchical clustering linkage matrix and the labels (in Spectra) of each sample. For each set of samples with the same label, it 
+        calculates the difference of distances between where the cluster with all the set of samples was formed and the cluster that joins 
+        those set of samples with another samples. The normalization of this distance is made by dividing said difference by the max 
+        distance between any two cluster. If the samples with the same label aren't all in the same cluster before any other sample joins 
+        them, the distance given to this set of samples is zero. It returns the measure of the normalized distance as well as a dictionary 
+        with all the calculated distances for all set of samples (labels).
 
-       Spectra: AlignedSpectra object (from metabolinks).
-       Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
-       method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
-    based on the distances calculated for each set of samples.
+        df: Pandas DataFrame.
+        Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
+        method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
+        based on the distances calculated for each set of samples.
 
-       Returns: (scalar, dictionary); normalized discrimination distance measure, dictionary with the discrimination distance for each
-    set of samples.
+        Returns: (global_distance, discrimination_distances)
+        global_distance: float or None; normalized discrimination distance measure
+        discrimination_distances: dict: dictionary with the discrimination distance for each label.
     """
 
     # Create dictionaries with the clusters formed at iteration r
     # and the distance between the elements of cluster.
     dists = {}
     clust = {}
-    for i in range(0, len(Z)+1):
-        clust[i] = (float(i),)
-    for r in range(0, len(Z)):
-        clust[len(Z)+1+r] = clust[Z[r, 0]] + clust[Z[r, 1]]
-        dists[len(Z)+1+r] = Z[r, 2]
-
-    unique_labels = Spectra.ms.unique_labels
-    n_unique_labels = Spectra.ms.label_count
-    all_labels = list(Spectra.ms.labels)
-
-    #Create dictionary with number of samples for each group
-    sample_number = {label: len(Spectra.ms.samples_of(label)) for label in unique_labels}
-
-    # Calculate discriminating distances of a set of samples with the same label
-    # and storing in a dictionary.
-
-    separaT = 0
-    separa = {label: [0] * n_unique_labels for label in unique_labels}
-
-    for i in clust:
-        labelset = [all_labels[int(clust[i][j])] for j in range(len(clust[i]))]
-
-        #check if cluster length = the number of samples of the group of one of the samples that belong to the cluster.
-        if len(clust[i]) == sample_number[labelset[0]]:
-            #labelset = [Spectra.labels[int(clust[i][j])] for j in range(sample_number)]
-            # All labels must be the same.
-            if labelset.count(labelset[0]) == len(labelset):
-                itera = np.where(Z == i)[0][0]
-                dif_dist = Z[itera, 2]
-                separa[labelset[0]] = (dif_dist-dists[i])/Z[-1, 2]#Z[-1,2] - maximum distance between 2 clusters.
-                separaT = separaT + separa[labelset[0]]
-
-    # Method to quantify a measure of a global discriminating distance for a linkage matrix.
-    if method == 'average':
-        separaM = separaT/n_unique_labels
-    elif method == 'median':
-        separaM = np.median(list(separa.values()))
-        if separaM == 0:
-            separaM = None
-    else:
-        raise ValueError(
-            'Method not recognized. Available methods: "average", "median".')
-
-    return separaM, separa
-
-def dist_discrim_new(df, Z, method='average'):
-    """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
-
-       This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
-    hierarchical clustering linkage matrix and the labels (in Spectra) of each sample. For each set of samples with the same label, it 
-    calculates the difference of distances between where the cluster with all the set of samples was formed and the cluster that joins 
-    those set of samples with another samples. The normalization of this distance is made by dividing said difference by the max 
-    distance between any two cluster. If the samples with the same label aren't all in the same cluster before any other sample joins 
-    them, the distance given to this set of samples is zero. It returns the measure of the normalized distance as well as a dictionary 
-    with all the calculated distances for all set of samples (labels).
-
-       Spectra: DataFrame.
-       Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
-       method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
-    based on the distances calculated for each set of samples.
-
-       Returns: (scalar, dictionary); normalized discrimination distance measure, dictionary with the discrimination distance for each
-    set of samples.
-    """
-
-    # Creating dictionaries with the clusters formed at iteration r and the distance between the elements of said cluster.
-    dists = {}
-    clust = {}
     nZ = len(Z)
-    for i in range(0, nZ+1):
-        clust[i] = (float(i),)
-    for r in range(0, nZ):
+    for i in range(0, nZ + 1):
+        clust[i] = (int(i),)
+    for r in range(nZ):
         clust[nZ + 1 + r] = clust[Z[r, 0]] + clust[Z[r, 1]]
         dists[nZ + 1 + r] = Z[r, 2]
 
-    #Creating dictionary with number of samples for each group
-    unique_labels = list(df.ms.unique_labels)
-    n_unique = len(unique_labels)
-    labels = list(df.ms.labels)
-    
-    sample_number = {}
-    for label in unique_labels:
-        sample_number[label] = len(df.ms.samples_of(label))
+    # print('clust ----------------')
+    # for c in clust:
+    #     print(f'{c} --> {clust[c]}')
+    # print('dists ----------------')
+    # for d in dists:
+    #     print(f'{d} --> {dists[d]}')
 
-    # Calculating discriminating distances of a set of samples with the same label and storing in a dictionary.
-    separaT = 0
-    separa = {label: [0]*n_unique for label in unique_labels}
+    # Get metadata from df
+    unique_labels = df.ms.unique_labels
+    n_unique_labels = df.ms.label_count
+    all_labels = list(df.ms.labels)
+
+    # Create dictionary with number of samples per label
+    sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
+    min_len = min(sample_number.values())
+    max_len = max(sample_number.values())
+
+    # Calculate discriminating distances of a set of samples with the same label
+    # store in dictionary `discrims`.
+    # `total` accumulates total.
+
+    total = 0
+    discrims = {label: 0.0 for label in unique_labels}
+
     for i in clust:
-        label = [labels[int(clust[i][j])] for j in range(len(clust[i]))]
-        #check if cluster length = the number of samples of the group of one of the samples that belong to the cluster.
-        if len(clust[i]) == sample_number[label[0]]:
-            #label = [Spectra.labels[int(clust[i][j])]
-                     #for j in range(sample_number)]
-            # All labels must be the same.
-            if label.count(label[0]) == len(label):
-                itera = np.where(Z == i)[0][0]
-                dif_dist = Z[itera, 2]
-                separa[label[0]] = (dif_dist-dists[i])/Z[-1, 2]#Z[-1,2] - maximum distance between 2 clusters.
-                separaT = separaT + separa[label[0]]
+        len_cluster = len(clust[i])
+        # skip if cluster too short or too long
+        if not (min_len <= len_cluster <= max_len):
+            continue
+
+        #labelset = [all_labels[clust[i][j]] for j in range(len(clust[i]))]
+        labelset = [all_labels[loc] for loc in clust[i]]
+        # get first element
+        label0 = labelset[0]
+
+        # check if cluster length == exactely the number of samples of label of 1st element.
+        # If so, all labels must also be equal
+        if len_cluster != sample_number[label0] or labelset.count(label0) != len_cluster:
+            continue
+
+        # Compute distances.
+        itera = np.where(Z == i)[0][0]
+        dif_dist = Z[itera, 2]
+        discrims[label0] = (dif_dist-dists[i])/Z[-1, 2]
+        # Z[-1,2] - maximum distance between 2 clusters.
+        total += discrims[label0]
+        # print(f'\n-----------\ncluster {i}, label set ----> {labelset}')
+        # print('discrims ---->', discrims)
+        # print('separaT ---->', total)
 
     # Method to quantify a measure of a global discriminating distance for a linkage matrix.
     if method == 'average':
-        separaM = separaT / n_unique
+        separaM = total / n_unique_labels
     elif method == 'median':
-        separaM = np.median(list(separa.values()))
-        # if separaM == 0:
-        #     separaM = None
+        separaM = np.median(list(discrims.values()))
+        if separaM == 0:
+            separaM = None
     else:
-        raise ValueError(
-            'Method not recognized. Available methods: "average", "median".')
+        raise ValueError('Method should be one of: ["average", "median"].')
+    # print('return values *********')
+    # print(separaM)
+    # print(discrims)
+    # print('************************')
 
-    return separaM, separa
+    return separaM, discrims
