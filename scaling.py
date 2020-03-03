@@ -321,8 +321,76 @@ def spectra_proc(Spectra, minsample=0, Feat_mass=False, remove=True, lamb= 'Fals
         Spectra = ParetoScal(Spectra)
     return Spectra
 
+def dist_discrim(Spectra, Z, method='average'):
+    """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
 
-def dist_discrim(df, Z, method='average'):
+       This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
+    hierarchical clustering linkage matrix and the labels (in Spectra) of each sample. For each set of samples with the same label, it 
+    calculates the difference of distances between where the cluster with all the set of samples was formed and the cluster that joins 
+    those set of samples with another samples. The normalization of this distance is made by dividing said difference by the max 
+    distance between any two cluster. If the samples with the same label aren't all in the same cluster before any other sample joins 
+    them, the distance given to this set of samples is zero. It returns the measure of the normalized distance as well as a dictionary 
+    with all the calculated distances for all set of samples (labels).
+
+       Spectra: AlignedSpectra object (from metabolinks).
+       Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
+       method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
+    based on the distances calculated for each set of samples.
+
+       Returns: (scalar, dictionary); normalized discrimination distance measure, dictionary with the discrimination distance for each
+    set of samples.
+    """
+
+    # Create dictionaries with the clusters formed at iteration r
+    # and the distance between the elements of cluster.
+    dists = {}
+    clust = {}
+    for i in range(0, len(Z)+1):
+        clust[i] = (float(i),)
+    for r in range(0, len(Z)):
+        clust[len(Z)+1+r] = clust[Z[r, 0]] + clust[Z[r, 1]]
+        dists[len(Z)+1+r] = Z[r, 2]
+
+    unique_labels = Spectra.ms.unique_labels
+    n_unique_labels = Spectra.ms.label_count
+    all_labels = list(Spectra.ms.labels)
+
+    #Create dictionary with number of samples for each group
+    sample_number = {label: len(Spectra.ms.samples_of(label)) for label in unique_labels}
+
+    # Calculate discriminating distances of a set of samples with the same label
+    # and storing in a dictionary.
+
+    separaT = 0
+    separa = {label: [0] * n_unique_labels for label in unique_labels}
+
+    for i in clust:
+        labelset = [all_labels[int(clust[i][j])] for j in range(len(clust[i]))]
+
+        #check if cluster length = the number of samples of the group of one of the samples that belong to the cluster.
+        if len(clust[i]) == sample_number[labelset[0]]:
+            #labelset = [Spectra.labels[int(clust[i][j])] for j in range(sample_number)]
+            # All labels must be the same.
+            if labelset.count(labelset[0]) == len(labelset):
+                itera = np.where(Z == i)[0][0]
+                dif_dist = Z[itera, 2]
+                separa[labelset[0]] = (dif_dist-dists[i])/Z[-1, 2]#Z[-1,2] - maximum distance between 2 clusters.
+                separaT = separaT + separa[labelset[0]]
+
+    # Method to quantify a measure of a global discriminating distance for a linkage matrix.
+    if method == 'average':
+        separaM = separaT/n_unique_labels
+    elif method == 'median':
+        separaM = np.median(list(separa.values()))
+        if separaM == 0:
+            separaM = None
+    else:
+        raise ValueError(
+            'Method not recognized. Available methods: "average", "median".')
+
+    return separaM, separa
+
+def dist_discrim_new(df, Z, method='average'):
     """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
 
        This function calculates the distance from a certain number of samples with the same label to the closest samples using the 

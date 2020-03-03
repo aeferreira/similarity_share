@@ -101,12 +101,11 @@ Euc_neg = sca.ParetoScal(Imputated_neg)
 dist_euc_neg = dist.pdist(Euc_neg.T, metric='euclidean')
 Z_euc_neg = hier.linkage(dist_euc_neg, method='average')
 
+discrim_ave = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='average')
+discrim_med = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='median')
 
 def test_dist_dicrim_average():
-    discrim = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='average')
-    assert str(discrim[0]) == str(np.array(list(discrim[1].values())).mean())
-
+    assert str(discrim_ave[0]) == str(np.array(list(discrim_ave[1].values())).mean())
 
 def test_dist_dicrim_median():
-    discrim = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='median')
-    assert discrim[0] == np.median(list(discrim[1].values()))
+    assert discrim_med[0] == np.median(list(discrim_med[1].values()))
