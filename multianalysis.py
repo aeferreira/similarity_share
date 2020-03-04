@@ -72,21 +72,29 @@ def Kmeans_discrim(df, method = 'average'):
     samples.
     """
     #Application of the K-means clustering with n_clusters equal to the number of unique labels.
-    n_labels = df.ms.label_count
-    unique_labels = list(df.ms.unique_labels)
-    all_labels = list(df.ms.labels)
+
+    # Get data parts
+    #DataParts = namedtuple('DataParts', 'data_matrix labels names features unique_labels')
+    dfdata = df.ms.data
+    unique_labels = list(dfdata.unique_labels)
+    all_labels = list(dfdata.labels)
+    n_labels = len(unique_labels)
+    sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
+
     Kmean2 = skclust.KMeans(n_clusters = n_labels)
-    Kmean = Kmean2.fit(df.values.T)
+    Kmean = Kmean2.fit(dfdata.data_matrix)
+
     Correct_Groupings = {label: 0 for label in unique_labels}
 
     # Creating dictionary with number of samples for each group
-    sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
 
     #Making a matrix with the pairwise distances between any 2 clusters.
     distc = dist.pdist(Kmean.cluster_centers_) 
     distma = dist.squareform(distc)
-    maxi = max(distc) #maximum distance (to normalize discrimination distacnces).
-    #Check if the two conditions are met (all samples in one cluster and only them) and calculation of discrimination distance.
+    maxi = max(distc) #maximum distance (to normalize discrimination distancces).
+
+    #Check if the two conditions are met (all samples in one cluster and only them)
+    # Then calculate discrimination distance.
     for i in unique_labels:
         if (Kmean.labels_ == Kmean.labels_[all_labels.index(i)]).sum() == sample_number[i]:
             Correct_Groupings[i] = min(distma[Kmean.labels_[all_labels.index(i)],
@@ -123,29 +131,32 @@ def fast_SMOTE(df, binary = False, max_sample = 0):
 
        Returns: AlignedSpectra object (from metabolinks); Spectra with extra samples originated with the name 'Arti(Sample1)-(Sample2)'.
     """
-    Newdata = df.copy()  
+    Newdata = df.copy().ms.erase_labels()
+    
     n_unique_labels = df.ms.label_count
     unique_labels = df.ms.unique_labels
     all_labels = list(df.ms.labels)
     n_all_labels = len(all_labels)
+    
     nlabels = []
     nnew = {}
     for i in range(n_unique_labels):
         #See how many samples there are in the dataset for each unique_label of the dataset
-        samples = [df.iloc[:,n] for n, x in enumerate(all_labels) if x == unique_labels[i]]
-        if len(samples) > 1: #if len(samples) = 1 - no pair of 2 samples to make a new one.
+        #samples = [df.iloc[:,n] for n, x in enumerate(all_labels) if x == unique_labels[i]]
+        label_samples = [df.ms.subset(label=lbl) for lbl in unique_labels]
+        if len(label_samples) > 1: #if len(samples) = 1 - no pair of 2 samples to make a new one.
             #Ensuring all combinations of samples are used to create new samples.
-            n = len(samples) - 1
-            for j in range(len(samples)):
+            n = len(label_samples) - 1
+            for j in range(len(label_samples)):
                 m = 0
                 while j < n - m:
-                    Vector = samples[n - m] - samples[j]
+                    Vector = label_samples[n - m] - label_samples[j]
                     random = np.random.random(1)
                     if binary:
                         #Round values to 0 or 1 so the data stays binary while still creating "relevant" "new" data.
-                        Newdata['Arti' + samples[j].name + '-' + samples[n-m].name] = round(samples[j] + random[0]*Vector)
+                        Newdata['Arti' + unique_labels[j] + '-' + unique_labels[n-m]] = round(label_samples[j] + random[0]*Vector)
                     else:
-                        Newdata['Arti' + samples[j].name + '-' + samples[n-m].name] = samples[j] + random[0]*Vector
+                        Newdata['Arti' + unique_labels[j] + '-' + unique_labels[n-m]] = label_samples[j] + random[0]*Vector
                     m = m + 1
                     #Giving the correct label to each new sample.
                     nlabels.append(unique_labels[i])
@@ -162,7 +173,7 @@ def fast_SMOTE(df, binary = False, max_sample = 0):
     #Choosing samples for each group/labels to try and get max_samples in total of that label.
     if max_sample >= max(sample_number.values()):
         #List with names of the samples chosen for the final dataset
-        chosen_samples = list(df.columns)
+        chosen_samples = list(df.samples)
         nlabels = []
         loca = 0
         for i in unique_labels:
@@ -182,7 +193,7 @@ def fast_SMOTE(df, binary = False, max_sample = 0):
 
     #Creating the label list for the AlignedSpectra object
     Newlabels = all_labels + nlabels
-    Newdata.ms.labels = Newlabels
+    Newdata = mts.add_labels(Newdata, Newlabels)
     return Newdata
 
 #Random Forests Functions - simple_RF, RF_M3 (Method 3), RF_M4 (Method 4)
@@ -201,9 +212,18 @@ def simple_RF(df, iter_num = 20, n_fold = 3, n_trees = 200):
        Returns: (list, list of tuples); list of the scores/accuracies of k-fold cross-validation of the random forests (each iteration 
     and each group), descending ordered list of tuples with index number of feature, feature importance and name of feature.
     """
+
+    # Get data parts
+    #DataParts = namedtuple('DataParts', 'data_matrix labels names features unique_labels')
+    dfdata = df.ms.data
+    unique_labels = list(dfdata.unique_labels)
+    all_labels = list(dfdata.labels)
+    # n_labels = len(unique_labels)
+    # sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
+    ncols = len(df.columns)
+
     #Setting up variables for result storing
-    imp_feat = np.zeros((iter_num*n_fold, len(df)))
-    all_labels = list(df.ms.labels)
+    imp_feat = np.zeros((iter_num*n_fold, ncols))
     cv = []
     f = 0
     for i in range(iter_num): #number of times random forests cross-validation is made
@@ -226,7 +246,7 @@ def simple_RF(df, iter_num = 20, n_fold = 3, n_trees = 200):
         cv.append(np.mean(CV))
     #Joining and ordering all important features values from each random forest
     imp_feat_sum = imp_feat.sum(axis = 0)/(iter_num*n_fold)
-    imp_feat_sum = sorted(enumerate(imp_feat_sum), key = lambda x: x[1], reverse = True)
+    imp_feat_sum = sorted(enumerate(imp_feat_sum), key=lambda x: x[1], reverse=True)
     imp_feat_ord = []
     for i,j in imp_feat_sum:
         imp_feat_ord.append((i , j, df.index[i]))
