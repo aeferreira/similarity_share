@@ -24,7 +24,7 @@ def reading_MetAna_file(filename, has_labels=False):
     df = df.drop(columns=["mz", "rt"], errors='ignore')
     if not has_labels:
         # force labels
-        df = mtl.add_labels(df, ['KO', 'WT'])
+        df = mtl.add_labels(df, labels=['KO', 'WT'])
     return df
 
 MetAna_O2 = reading_MetAna_file('MetAnalyst/MetAna_Original.csv', has_labels=True)
