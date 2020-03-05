@@ -17,38 +17,14 @@ def NaN_Imputation(df, minsample=0):
 def remove_feat(df, minsample = 0):
     return trans.keep_atleast(df, min_samples=minsample)
 
-
 ### Normalizations
 def Norm_Feat(df, Feat_mass, remove=True):
     return trans.normalize_ref_feature(df, Feat_mass, remove=remove)
 
-# def Norm_Feat(Spectra, Feat_mass, remove=True):
-#     """Normalization of a dataset by a reference feature.
-
-#        Spectra: AlignedSpectra object (from metabolinks).
-#        Feat_mass: scalar; m/z of the reference feature to normalize the sample.
-#        remove: bool; True to remove reference feature from data after normalization.
-
-#        Returns: AlignedSpectra object (from metabolinks); normalized spectra.
-#        """
-
-#     temp = Spectra.data.copy()
-#     for i in range(Spectra.sample_count):
-#         temp.iloc[:, i] = temp.iloc[:, i]/Spectra.data.loc[Feat_mass][i]
-#     if remove:
-#         temp = temp.drop([Feat_mass])
-
-#     return AlignedSpectra(temp, sample_names=Spectra.sample_names, labels=Spectra.labels)
-
-
-def Norm_TotalInt (Spectra):
-    """Normalization of a dataset by the total peak intensity in each Spectra.
-
-       Spectra: AlignedSpectra object (from metabolinks).
-
-       Returns: AlignedSpectra object (from metabolinks); normalized spectra.
-    """
-    return AlignedSpectra(Spectra.data/Spectra.data.sum(), sample_names=Spectra.sample_names, labels = Spectra.labels)
+def Norm_TotalInt (df):
+    """Normalization of a dataset by the total value per columns."""
+    
+    return df/df.sum()
 
 
 #Needs double-checking
