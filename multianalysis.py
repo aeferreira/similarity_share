@@ -467,10 +467,10 @@ def Dendrogram_Sim(Z, zdist, Y, ydist, type = 'cophenetic', Trace = False):
     if type == 'cophenetic':
         CophZ = hier.cophenet(Z, zdist)
         CophY = hier.cophenet(Y, ydist)
-        Corr = stats.pearsonr(CophZ[1],CophY[1])
+        r, p = stats.pearsonr(CophZ[1],CophY[1])
         if Trace:
-            print ('The Cophenetic Correlation Coefficient is:', Corr[ 0], ', and has a p-value of', Corr[1])
-        return Corr
+            print ('The Cophenetic Correlation Coefficient is {} , and has a p-value of {}'.format(r,p))
+        return (r,p)
 
     else:
         KZ = mergerank (Z)
@@ -491,7 +491,7 @@ def Dendrogram_Sim(Z, zdist, Y, ydist, type = 'cophenetic', Trace = False):
             raise ValueError ('Type not Recognized. Types accepted: "Baker Kendall", "Baker Spearman", "cophenetic"')
 
 
-#PLS-DA functions
+#--------- PLS-DA functions ---------------------
 def optim_PLS(df, matrix, max_comp = 50, n_fold = 3):
     """Searches for an optimum number of components to use in PLS-DA by accuracy (3-fold cross validation) and mean-squared errors.
 
@@ -517,10 +517,10 @@ def optim_PLS(df, matrix, max_comp = 50, n_fold = 3):
         #Splitting data into 3 groups for 3-fold cross-validation
         kf = StratifiedKFold(n_fold, shuffle = True)
         #Repeating for each of the 3 groups
-        for train_index, test_index in kf.split(df.T, all_labels):
-            plsda = PLSRegression(n_components = i, scale = False)
-            X_train, X_test = Spectra.data[df.columns[train_index]].T, Spectra.data[df.columns[test_index]].T
-            y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
+        for train_index, test_index in kf.split(df.T.values, all_labels):
+            plsda = PLSRegression(n_components=i, scale=False)
+            X_train, X_test = df.iloc[:, train_index].T, df.iloc[:, test_index].T
+            y_train, y_test = matrix.T.iloc[:, train_index], matrix.T.iloc[:, test_index]
 
             #Fitting the model
             plsda.fit(X=X_train,Y=y_train)
@@ -560,7 +560,7 @@ def _calculate_vips(model):
 
     return vips
 
-def model_PLSDA(df, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type = 'Coef', figures = False):
+def model_PLSDA(df, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type='Coef', figures=False):
     """Perform PLS-DA on an AlignedSpectra with 3-fold cross-validation and obtain the model's accuracy and important features.
 
        Spectra: AlignedSpectra object (from metabolinks); includes X equivalent in PLS-DA (training vectors).
@@ -581,7 +581,7 @@ def model_PLSDA(df, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type = 'Coe
     CV = []
     CVR2 = []
     Accuracy = []
-    Imp_Feat = np.zeros((iter_num*n_fold, len(Spectra.data)))
+    Imp_Feat = np.zeros((iter_num*n_fold, len(df.columns)))
     f = 0
     all_labels = list(df.ms.labels)
 
@@ -597,8 +597,9 @@ def model_PLSDA(df, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type = 'Coe
         #Repeating for each of the 3 groups
         for train_index, test_index in kf.split(df.T, all_labels):
             plsda = PLSRegression(n_components = n_comp, scale = False)
-            X_train, X_test = df[df.columns[train_index]].T, df[df.columns[test_index]].T
-            y_train, y_test = matrix.T[matrix.T.columns[train_index]].T, matrix.T[matrix.T.columns[test_index]].T
+            X_train, X_test = df.iloc[:, train_index].T, df.iloc[:, test_index].T
+            y_train, y_test = matrix.T.iloc[:, train_index], matrix.T.iloc[:, test_index]
+            
             #Fitting the model
             plsda.fit(X=X_train,Y=y_train)
 
@@ -612,7 +613,7 @@ def model_PLSDA(df, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type = 'Coe
             for i in range(len(y_pred)):
                 #if list(y_test.iloc[:,i]).index(max(y_test.iloc[:,i])) == np.argmax(y_pred[i]):
                 if list(y_test.iloc[i,:]).index(max(y_test.iloc[i,:])) == np.argmax(y_pred[i]):
-                    certo = certo + 1 #Correct prediction
+                    certo = certo + 1 # Correct prediction
 
             #Calculating important features by 1 of 3 different methods
             if feat_type == 'VIP':
@@ -626,9 +627,10 @@ def model_PLSDA(df, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type = 'Coe
 
             f = f + 1
 
-            #figures = True - making scatter plots of training data in the 2 first components
+            # figures = True - making scatter plots of training data in the 2 first components
             LV_score = pd.DataFrame(plsda.x_scores_)
 
+            # TODO: this should be moved to another function (separation of computation from plots)
             if figures != False:
                 #Preparing colours to separate different groups
                 colours = cm.get_cmap('nipy_spectral', figures)

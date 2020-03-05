@@ -288,16 +288,16 @@ def dist_discrim(df, Z, method='average'):
         discrimination_distances: dict: dictionary with the discrimination distance for each label.
     """
 
-    # Create dictionaries with the clusters formed at iteration r
-    # and the distance between the elements of cluster.
-    dists = {}
-    clust = {}
+    # From linkage table, create dictionaries with the clusters formed at iteration r
+    # and the distance between the elements of cluster. See scipy linkage() documentation
     nZ = len(Z)
-    for i in range(0, nZ + 1):
-        clust[i] = (int(i),)
+
+    dists = {}
+    clust = {i: (int(i),) for i in range(0, nZ + 1)}
     for r in range(nZ):
-        clust[nZ + 1 + r] = clust[Z[r, 0]] + clust[Z[r, 1]]
-        dists[nZ + 1 + r] = Z[r, 2]
+        c1, c2, d, _ = Z[r, :] # unpacking line of iteration r in Z
+        clust[nZ + 1 + r] = clust[c1] + clust[c2] # this is addition of tuples
+        dists[nZ + 1 + r] = d
 
     # print('clust ----------------')
     # for c in clust:
@@ -329,7 +329,6 @@ def dist_discrim(df, Z, method='average'):
         if not (min_len <= len_cluster <= max_len):
             continue
 
-        #labelset = [all_labels[clust[i][j]] for j in range(len(clust[i]))]
         labelset = [all_labels[loc] for loc in clust[i]]
         # get first element
         label0 = labelset[0]
