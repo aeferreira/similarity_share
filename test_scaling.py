@@ -103,7 +103,8 @@ preprocessed = sca.NaN_Imputation(aligned_all_neg, 0).pipe(sca.ParetoScal)
 dist_euclidian = dist.pdist(preprocessed.T, metric='euclidean')
 Z_euc = hier.linkage(dist_euclidian, method='average')
 
-#discrim = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')
+# global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')
+# print(global_dist, discrims)
 
 def test_dist_dicrim_average():
     global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')

@@ -3,6 +3,8 @@ import metabolinks as mtl
 import metabolinks.transformations as trans
 import numpy as np
 
+from scipy.cluster import hierarchy as hier
+
 """Elimination of features with too many missing values, missing value estimation, normalization methods, generalized logarithmic
 transformation, reference feature estimation and centering and scaling methods. Discrimination distance of hierarchical clustering."""
 
@@ -288,33 +290,36 @@ def dist_discrim(df, Z, method='average'):
         discrimination_distances: dict: dictionary with the discrimination distance for each label.
     """
 
-    # From linkage table, create dictionaries with the clusters formed at iteration r
-    # and the distance between the elements of cluster. See scipy linkage() documentation
-    nZ = len(Z)
-
-    dists = {}
-    clust = {i: (int(i),) for i in range(0, nZ + 1)}
-    for r in range(nZ):
-        c1, c2, d, _ = Z[r, :] # unpacking line of iteration r in Z
-        clust[nZ + 1 + r] = clust[c1] + clust[c2] # this is addition of tuples
-        dists[nZ + 1 + r] = d
-
-    # print('clust ----------------')
-    # for c in clust:
-    #     print(f'{c} --> {clust[c]}')
-    # print('dists ----------------')
-    # for d in dists:
-    #     print(f'{d} --> {dists[d]}')
-
     # Get metadata from df
     unique_labels = df.ms.unique_labels
     n_unique_labels = df.ms.label_count
     all_labels = list(df.ms.labels)
+    ns = len(df.ms.samples)
 
     # Create dictionary with number of samples per label
     sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
     min_len = min(sample_number.values())
     max_len = max(sample_number.values())
+
+    # to_tree() returns root ClusterNode and ClusterNode list
+    _, cn_list = hier.to_tree(Z, rd=True)
+
+    # print('results from to_tree ----------------')
+    # for cn in cn_list[ns:]:
+    #     n_in_cluster = cn.get_count()
+    #     if not (min_len <= n_in_cluster <= max_len):
+    #         continue
+    #     ids = cn.pre_order(lambda x: x.id)
+    #     labels = [all_labels[i] for i in ids]
+    #     d = Z[cn.get_id() - ns, 2]
+    #     print(f'{cn.get_id()} --> {n_in_cluster} --> {ids} -- > {labels}')
+    #     print('distance = ', d)
+
+    # print('-------------------------------------')
+
+    # dists is a dicionary of cluster_id: distance. Distance is fetch from Z
+
+    dists = {cn.get_id(): Z[cn.get_id() - ns, 2] for cn in cn_list[ns:]}
 
     # Calculate discriminating distances of a set of samples with the same label
     # store in dictionary `discrims`.
@@ -322,14 +327,17 @@ def dist_discrim(df, Z, method='average'):
 
     total = 0
     discrims = {label: 0.0 for label in unique_labels}
+    # Z[-1,2] is the maximum distance between any 2 clusters
+    max_dist = Z[-1,2]
 
-    for i in clust:
-        len_cluster = len(clust[i])
+    for cn in cn_list:
+        i = cn.get_id()
+        len_cluster = cn.get_count()
         # skip if cluster too short or too long
         if not (min_len <= len_cluster <= max_len):
             continue
 
-        labelset = [all_labels[loc] for loc in clust[i]]
+        labelset = [all_labels[loc] for loc in cn.pre_order(lambda x: x.id)]
         # get first element
         label0 = labelset[0]
 
@@ -339,14 +347,15 @@ def dist_discrim(df, Z, method='average'):
             continue
 
         # Compute distances.
+        # find iteration when cluster i was integrated in a larger one
         itera = np.where(Z == i)[0][0]
         dif_dist = Z[itera, 2]
-        discrims[label0] = (dif_dist-dists[i])/Z[-1, 2]
-        # Z[-1,2] - maximum distance between 2 clusters.
+
+        discrims[label0] = (dif_dist - dists[i]) / max_dist
         total += discrims[label0]
         # print(f'\n-----------\ncluster {i}, label set ----> {labelset}')
         # print('discrims ---->', discrims)
-        # print('separaT ---->', total)
+        # print('total so far ---->', total)
 
     # Method to quantify a measure of a global discriminating distance for a linkage matrix.
     if method == 'average':
