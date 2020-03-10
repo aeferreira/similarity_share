@@ -101,7 +101,7 @@ def Norm_Quantile(Spectra, ref_type = 'mean'):
 
 
 ### Transformations
-def glog(Spectra, lamb=None):
+def glog(df, lamb=None):
     """Performs Generalized Logarithmic Transformation on a Spectra (same as MetaboAnalyst's transformation).
 
     df: Pandas DataFrame.

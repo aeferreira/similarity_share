@@ -220,10 +220,10 @@ def simple_RF(df, iter_num = 20, n_fold = 3, n_trees = 200):
     all_labels = list(dfdata.labels)
     # n_labels = len(unique_labels)
     # sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
-    ncols = len(df.columns)
+    nfeats = len(df.index)
 
     #Setting up variables for result storing
-    imp_feat = np.zeros((iter_num*n_fold, ncols))
+    imp_feat = np.zeros((iter_num*n_fold, nfeats))
     cv = []
     f = 0
     for i in range(iter_num): #number of times random forests cross-validation is made
@@ -398,11 +398,11 @@ def overfit_RF(Spectra, iter_num = 20, test_size = 0.1, n_trees = 200):
     return np.mean(scores), np.mean(cks), imp_feat_ord, np.mean(CV)
 
 
-def permutation_RF(Spectra, iter_num = 100, n_fold = 3, n_trees = 200):
+def permutation_RF(df, iter_num=100, n_fold=3, n_trees=200):
     """Performs permutation test n times with k-fold cross validation of a dataset for random forest classification giving its accuracy
     score for the original and all permutations made and respective p-value.
 
-       Spectra: AlignedSpectra object (from metabolinks).
+       df: DataFrame.
        iter_num: int (default - 100); number of permutations that will be made.
        n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
     samples belonging to one group).
@@ -414,43 +414,46 @@ def permutation_RF(Spectra, iter_num = 100, n_fold = 3, n_trees = 200):
     """
     #Setting up variables for result storing
     Perm = []
-    #Setting lsit of columns to shuffle and dataframe of the data to put columns in NewC shuffled order
-    NewC = list(Spectra.data.columns.copy())
-    df = Spectra.data.copy()
+    # List of columns to shuffle and dataframe of the data to put columns in NewC shuffled order
+    NewC = list(df.columns.copy())
+    df = df.copy()
+    dft = df.transpose()
     #For dividing the dataset in balanced n_fold groups with a random random state maintained in all permutations (identical splits)
-    kf = StratifiedKFold(n_fold, shuffle = True, random_state = np.random.randint(1000000000))
+    kf = StratifiedKFold(n_fold, shuffle=True, random_state=np.random.randint(1000000000))
+    all_labels = tuple(df.ms.labels)
 
     for i in range(iter_num+1): #number of different permutations + original dataset where random forests cross-validation will be made
-        #Temporary dataframe with columns in order of the NewC
+        # Temporary dataframe with columns in order of the NewC
         temp = df[NewC]
         perm = []
-        splits = kf.split(Spectra.data.T, Spectra.labels)
-        #Repeating for each of the k groups the random forest model fit and classification
+        splits = kf.split(dft, all_labels)
+        # Repeat for each of the k groups the random forest model fit and classification
         for train_index, test_index in splits:
-            #Random Forest setup and fit
-            rf = skensemble.RandomForestClassifier(n_estimators = n_trees)
-            X_train, X_test = temp[temp.columns[train_index]].T, temp[temp.columns[test_index]].T
-            y_train, y_test = [Spectra.labels[i] for i in train_index], [Spectra.labels[i] for i in test_index]
+            # Random Forest setup and fitting
+            rf = skensemble.RandomForestClassifier(n_estimators=n_trees)
+            # X_train, X_test = temp[temp.columns[train_index]].T, temp[temp.columns[test_index]].T
+            X_train, X_test = temp.iloc[:, train_index].T, temp.iloc[:, test_index].T
+            y_train, y_test = [all_labels[i] for i in train_index], [all_labels[i] for i in test_index]
 
             rf.fit(X_train, y_train)
-            #Obtaining results with the test group
-            perm.append(rf.score(X_test,y_test))
+            # Obtaining results with the test group
+            perm.append(rf.score(X_test, y_test))
 
-        #Shuffle dataset columns - 1 permutation of the columns (leads to permutation of labels)
+        # Shuffle dataset columns - 1 permutation of the columns (leads to permutation of labels)
         np.random.shuffle(NewC)
 
-        #Appending k-fold cross-validation score
+        # Appending k-fold cross-validation score
         Perm.append(np.mean(perm))
 
-    #Taking out k-fold cross-validation accuracy for the non-shuffled (labels) dataset and p-value calculation
+    # Taking out k-fold cross-validation accuracy for the non-shuffled (labels) dataset and p-value calculation
     CV = Perm[0]
-    pvalue = (sum(Perm[1:]>=Perm[0]) + 1)/(iter_num+1)
+    pvalue = (sum(Perm[1:] >= Perm[0]) + 1) / (iter_num + 1)
 
     return CV, Perm[1:], pvalue
 
 
 #Function to calculate a correlation coefficient between 2 different hierarchical clusterings/ dendrograms.
-def Dendrogram_Sim(Z, zdist, Y, ydist, type = 'cophenetic', Trace = False):
+def Dendrogram_Sim(Z, zdist, Y, ydist, type='cophenetic', Trace=False):
     """Calculates a correlation coefficient between 2 dendograms based on their distances and hierarchical clustering performed.
     
        Z: ndarray; linkage matrix of hierarchical clustering 1.
@@ -504,25 +507,26 @@ def optim_PLS(df, matrix, max_comp = 50, n_fold = 3):
        Returns: (list, list, list), 3-fold cross-validation score and r2 score and mean squared errors for all components searched.
     """
     all_labels = list(df.ms.labels)
-    #Preparating lists to store results
+    # Prepare lists to store results
     CVs = []
     CVr2s = []
     MSEs = []
-    #Repeating for each component from 1 to max_comp
-    for i in range(1,max_comp+1):
+    # Repeat for each component from 1 to max_comp
+    for i in range(1, max_comp + 1):
         cv = []
         cvr2 = []
         mse = []
 
-        #Splitting data into 3 groups for 3-fold cross-validation
-        kf = StratifiedKFold(n_fold, shuffle = True)
-        #Repeating for each of the 3 groups
+        # Split data into 3 groups for 3-fold cross-validation
+        kf = StratifiedKFold(n_fold, shuffle=True)
+
+        # Repeat for each of the 3 groups
         for train_index, test_index in kf.split(df.T.values, all_labels):
             plsda = PLSRegression(n_components=i, scale=False)
             X_train, X_test = df.iloc[:, train_index].T, df.iloc[:, test_index].T
             y_train, y_test = matrix.T.iloc[:, train_index], matrix.T.iloc[:, test_index]
 
-            #Fitting the model
+            # Fit the model
             plsda.fit(X=X_train,Y=y_train)
 
             #Obtaining results with the test group
@@ -530,7 +534,7 @@ def optim_PLS(df, matrix, max_comp = 50, n_fold = 3):
             cvr2.append(r2_score(plsda.predict(X_test), y_test))
             y_pred = plsda.predict(X_test)
             mse.append(mean_squared_error(y_test, y_pred))
-        #Storing results for each number of components
+        # Store results for each number of components
         CVs.append(np.mean(cv))
         CVr2s.append(np.mean(cvr2))
         MSEs.append(np.mean(mse))
@@ -544,14 +548,14 @@ def _calculate_vips(model):
 
         returns: list; VIP score for each variable from the dataset.
     """
-    #Setting up the variables
+    # Set up the variables
     t = model.x_scores_
     w = model.x_weights_
     q = model.y_loadings_
     p, h = w.shape
     vips = np.zeros((p,))
 
-    #Calculating VIPs
+    # Calculate VIPs
     s = np.diag(np.matmul(np.matmul(np.matmul(t.T,t),q.T), q)).reshape(h, -1)
     total_s = np.sum(s)
     for i in range(p):
@@ -581,7 +585,7 @@ def model_PLSDA(df, matrix, n_comp, n_fold = 3, iter_num = 100, feat_type='Coef'
     CV = []
     CVR2 = []
     Accuracy = []
-    Imp_Feat = np.zeros((iter_num*n_fold, len(df.columns)))
+    Imp_Feat = np.zeros((iter_num*n_fold, len(df.index)))
     f = 0
     all_labels = list(df.ms.labels)
 
