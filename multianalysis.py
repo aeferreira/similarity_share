@@ -82,11 +82,11 @@ def Kmeans_discrim(df, method='average'):
 
     # Get data parts
     # DataParts = namedtuple('DataParts', 'data_matrix labels names features unique_labels')
-    dfdata = df.ms.data
+    dfdata = df.cdl.data
     unique_labels = list(dfdata.unique_labels)
     all_labels = list(dfdata.labels)
     n_labels = len(unique_labels)
-    sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
+    sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
 
     Kmean2 = skclust.KMeans(n_clusters=n_labels)
     Kmean = Kmean2.fit(dfdata.data_matrix)
@@ -146,11 +146,11 @@ def fast_SMOTE(df, binary=False, max_sample=0):
 
     Returns: DataFrame; Table with extra samples with the name 'Arti(Sample1)-(Sample2)'.
     """
-    Newdata = df.copy().ms.erase_labels()
+    Newdata = df.copy().cdl.erase_labels()
 
-    n_unique_labels = df.ms.label_count
-    unique_labels = df.ms.unique_labels
-    all_labels = list(df.ms.labels)
+    n_unique_labels = df.cdl.label_count
+    unique_labels = df.cdl.unique_labels
+    all_labels = list(df.cdl.labels)
     n_all_labels = len(all_labels)
 
     nlabels = []
@@ -158,7 +158,7 @@ def fast_SMOTE(df, binary=False, max_sample=0):
     for i in range(n_unique_labels):
         # See how many samples there are in the dataset for each unique_label of the dataset
         # samples = [df.iloc[:,n] for n, x in enumerate(all_labels) if x == unique_labels[i]]
-        label_samples = [df.ms.subset(label=lbl) for lbl in unique_labels]
+        label_samples = [df.cdl.subset(label=lbl) for lbl in unique_labels]
         if len(label_samples) > 1:
             # if len(samples) = 1 - no pair of 2 samples to make a new one.
             # Ensuring all combinations of samples are used to create new samples.
@@ -188,7 +188,7 @@ def fast_SMOTE(df, binary=False, max_sample=0):
             nnew[unique_labels[i]] = len(nlabels) - sum(nnew.values())
 
     # Creating dictionary with number of samples for each group
-    sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
+    sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
 
     # Choosing samples for each group/labels to try and get max_samples in total of that label.
     if max_sample >= max(sample_number.values()):
@@ -244,10 +244,10 @@ def simple_RF(df, iter_num=20, n_fold=3, n_trees=200):
 
     # Get data parts
     # DataParts = namedtuple('DataParts', 'data_matrix labels names features unique_labels')
-    dfdata = df.ms.data
+    dfdata = df.cdl.data
     all_labels = list(dfdata.labels)
     # n_labels = len(unique_labels)
-    # sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
+    # sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
     nfeats = len(df.index)
 
     # Setting up variables for result storing
@@ -294,7 +294,7 @@ def RF_M3(df, iter_num=20, binary=False, test_size=0.1, n_trees=200):
     """Performs random forest classification of a dataset (oversampling the training set) n times giving its mean score, Kappa Cohen 
     score, most important features and cross-validation score.
 
-       Spectra: AlignedSpectra object (from metabolinks).
+       df: DataFrame.
        iter_num: int (default - 20); number of iterations that random forests are repeated.
        binary: bool (default - False); indication if the Spectra has binary data and therefore also ensuring the new samples made are
     also binary or if the Spectra has a "normal" non-binary dataset.
@@ -304,10 +304,16 @@ def RF_M3(df, iter_num=20, binary=False, test_size=0.1, n_trees=200):
        Returns: (scalar, scalar, list of tuples); mean of the scores of the random forests, mean of the Cohen's Kappa score of 
     the random forests, descending ordered list of tuples with index number of feature, feature importance and feature name.
     """
+    # Get data parts
+    # DataParts = namedtuple('DataParts', 'data_matrix labels names features unique_labels')
+    dfdata = df.cdl.data
+    all_labels = list(dfdata.labels)
+    # n_labels = len(unique_labels)
+    # sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
+
     imp_feat = np.zeros((iter_num, len(df)))
     cks = []
     scores = []
-    all_labels = list(df.ms.labels)
 
     for i in range(iter_num):
         # Splitting data and performing SMOTE on the training set.
@@ -316,11 +322,11 @@ def RF_M3(df, iter_num=20, binary=False, test_size=0.1, n_trees=200):
         )
         # X_Aligned = AlignedSpectra(X_train.T, labels = y_train)
         X_Aligned = X_train.T
-        X_Aligned.ms.labels = y_train
+        X_Aligned.cdl.labels = y_train
         Spectra_S = fast_SMOTE(X_Aligned, binary=binary)
         # Random Forest setup and fit.
         rf = skensemble.RandomForestClassifier(n_estimators=n_trees)
-        rf.fit(Spectra_S.T, Spectra_S.ms.labels)
+        rf.fit(Spectra_S.T, Spectra_S.cdl.labels)
 
         # Extracting the results of the random forest model built
         y_pred = rf.predict(X_test)
@@ -340,11 +346,11 @@ def RF_M3(df, iter_num=20, binary=False, test_size=0.1, n_trees=200):
 
 # In disuse
 # Function for method 3 - SMOTE on the training set and NGP processing of training and test data together.
-def RF_M4(Spectra, reffeat, iter_num=20, test_size=0.1, n_trees=200):
+def RF_M4(df, reffeat, iter_num=20, test_size=0.1, n_trees=200):
     """Performs random forest classification of a dataset (after oversampling the training sets and data processing both sets) n times 
     giving its mean score, Kappa Cohen score, most important features and cross-validation score.
 
-       Spectra: AlignedSpectra object (from metabolinks).
+       df: DataFrame.
        reffeat: scalar; m/z of the reference feature to normalize the samples.
        iter_num: int (default - 20); number of iterations that random forests are repeated.
        binary: bool (default - False); indication if the Spectra has binary data and therefore also ensuring the new samples made are
@@ -361,14 +367,14 @@ def RF_M4(Spectra, reffeat, iter_num=20, test_size=0.1, n_trees=200):
     for i in range(iter_num):
         # Splitting data and performing SMOTE on the training set.
         X_train, X_test, y_train, y_test = train_test_split(
-            Spectra.data.T, Spectra.labels, test_size=test_size
+            df.T, df.cdl.labels, test_size=test_size
         )
-        X_Aligned = AlignedSpectra(X_train.T, labels=y_train)
+        X_Aligned = X_train.T
         Spectra_S = fast_SMOTE(X_Aligned, binary=False)
 
         # NGP processing of the data
-        Spectra_S_J = Spectra_S.data.join(X_test.T)
-        Spectra_S_J = AlignedSpectra(Spectra_S_J, labels=Spectra_S.labels + y_test)
+        Spectra_S_J = Spectra_S.join(X_test.T)
+        Spectra_S_J.labels = Spectra_S.labels + y_test
         Norm_S = sca.Norm_Feat(Spectra_S_J, reffeat)
         glog_S = sca.glog(Norm_S, 0)
         Euc_glog_S = sca.ParetoScal(glog_S)
@@ -462,7 +468,7 @@ def permutation_RF(df, iter_num=100, n_fold=3, n_trees=200):
     kf = StratifiedKFold(
         n_fold, shuffle=True, random_state=np.random.randint(1000000000)
     )
-    all_labels = tuple(df.ms.labels)
+    all_labels = tuple(df.cdl.labels)
 
     for i in range(iter_num + 1):
         # number of different permutations + original dataset where random forests cross-validation will be made
@@ -580,7 +586,7 @@ def optim_PLS(df, matrix, max_comp=50, n_fold=3):
         cv = []
         cvr2 = []
         mse = []
-        all_labels = list(df.ms.labels)
+        all_labels = list(df.cdl.labels)
 
         # Splitting data into 3 groups for 3-fold cross-validation
         kf = StratifiedKFold(n_fold, shuffle=True)
@@ -662,7 +668,7 @@ def model_PLSDA(df, matrix, n_comp,
     Accuracy = []
     Imp_Feat = np.zeros((iter_num * n_fold, len(df.index)))
     f = 0
-    all_labels = list(df.ms.labels)
+    all_labels = list(df.cdl.labels)
 
     # Number of iterations equal to iter_num
     for i in range(iter_num):
@@ -735,7 +741,7 @@ def model_PLSDA(df, matrix, n_comp,
                 for n, x in enumerate(LV_score.values):
                     if n % 2 == 0:
                         i = i + 1
-                    label = df.ms.unique_labels[i]
+                    label = df.cdl.unique_labels[i]
                     # label = LV_score.index.values[n]
                     ax.text(x[0], x[1], label, fontsize=8)
 
@@ -776,8 +782,8 @@ def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False):
     df = df.copy()
 
     # Matrix formation
-    all_labels = list(df.ms.labels)
-    unique_labels = list(df.ms.unique_labels)
+    all_labels = list(df.cdl.labels)
+    unique_labels = list(df.cdl.unique_labels)
 
     if len(unique_labels) > 2:
         # Setting up the y matrix for when there are more than 2 classes (multi-class)

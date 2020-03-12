@@ -291,13 +291,13 @@ def dist_discrim(df, Z, method='average'):
     """
 
     # Get metadata from df
-    unique_labels = df.ms.unique_labels
-    n_unique_labels = df.ms.label_count
-    all_labels = list(df.ms.labels)
-    ns = len(df.ms.samples)
+    unique_labels = df.cdl.unique_labels
+    n_unique_labels = df.cdl.label_count
+    all_labels = list(df.cdl.labels)
+    ns = len(df.cdl.samples)
 
     # Create dictionary with number of samples per label
-    sample_number = {label: len(df.ms.samples_of(label)) for label in unique_labels}
+    sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
     min_len = min(sample_number.values())
     max_len = max(sample_number.values())
 
