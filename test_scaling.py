@@ -1,72 +1,82 @@
+""" Tests for module scaling."""
 import pytest
+from pytest import approx
+from pandas.testing import assert_frame_equal, assert_series_equal
+
 import scaling as sca
-from metabolinks import read_aligned_spectra, AlignedSpectra
+import numpy as np
 import pandas as pd
 import scipy.spatial.distance as dist
 import scipy.cluster.hierarchy as hier
-import numpy as np
+
+import metabolinks as mtl
 
 # Test file for the module scaling.
+# Needs files from MetaboAnalyst besides the ones in this repository (see MetAnalyst_Example.ipynb)
 
-MetAna_O2 = read_aligned_spectra('MetAnalyst/MetAna_Original.csv', labels=True, sep=',')
-a = []
-O = MetAna_O2.data.copy()
-for i in range(len(O.index)):
-    a.append(O.index[i].split('/'))
-    O.rename(index={O.index[i]: float(a[i][0])}, inplace=True)
-MetAna_O = AlignedSpectra(O, labels=MetAna_O2.labels)
+def reading_MetAna_file(filename, has_labels=False):
+    if has_labels:
+        df = pd.read_csv(filename, header=[0,1], sep=',', index_col=0)
+        # data has labels, but they are in the inner level of columns. Push to outer and rename levels
+        df = df.swaplevel(axis=1).rename_axis(['label', 'sample'], axis='columns')
+    else:
+        df = pd.read_csv(filename, header=0, sep=',', index_col=0).rename_axis('sample', axis='columns')
+    df = df.rename_axis('mz/rt', axis='index')
+    # these may exist, repeating information
+    df = df.drop(columns=["mz", "rt"], errors='ignore')
+    if not has_labels:
+        # force labels
+        df = mtl.add_labels(df, labels=['KO', 'WT'])
+    return df
 
-MetAna_I = read_aligned_spectra('MetAnalyst/MetAna_Imputed.csv', labels=True, sep=',')
+MetAna_O2 = reading_MetAna_file('MetAnalyst/MetAna_Original.csv', has_labels=True)
+print('ORIGINAL ----------------------------------')
+print(MetAna_O2)
+print('IMPUTED ----------------------------------')
+MetAna_I = reading_MetAna_file('MetAnalyst/MetAna_Imputed.csv', has_labels=True)
+print(MetAna_I)
+print('NORMALIZED ----------------------------------')
+MetAna_N = reading_MetAna_file('MetAnalyst/MetAna_Norm.csv')
+print(MetAna_N)
+print('PARETO SCALED ONLY ----------------------------------')
+MetAna_P = reading_MetAna_file('MetAnalyst/MetAna_Pareto.csv')  # Pareto Scaling only
+print(MetAna_P)
+
+MetAna_I2T = pd.read_csv('MetAnalyst/MetAna_Imputed2.csv', header=0, sep=',', index_col=0)
+print('IMPUTED TRANSPOSED ----------------------------------')
+print(MetAna_I2T)
 
 
-def reading_MetAna_files(filename):
-    file = pd.read_table(filename, header=[0], sep=',')
-    file = file.set_index(file.columns[0])
-    file.index.name = 'm/z'
-    file = file[["ko15", "ko16", "ko18", "ko19", "ko21",
-                 "ko22", "wt15", "wt16", "wt18", "wt19", "wt21", "wt22"]]
-    MetAna_file = AlignedSpectra(file, labels=[
-                                 "KO", "KO", "KO", "KO", "KO", "KO", "WT", "WT", "WT", "WT", "WT", "WT"])
-    return MetAna_file
+# A slightly modified version of "original" dataset
+# The row index was parsed to retain m/z values only, as floats
+new_index = MetAna_O2.index.str.split('/').str[0].astype(float)
 
+MetAna_O = pd.DataFrame(MetAna_O2.values, index=new_index, columns=MetAna_O2.columns)
+print('ORIGINAL, INDEX HAS NOW ONLY M/Z ----------------------------------')
+print(MetAna_O)
 
-# Tests for NaN_Imputation
-MetAna_I2T = read_aligned_spectra(
-    'MetAnalyst/MetAna_Imputed2.csv', labels=True, sep=',')  # Transposed
-
+print('aligned_1ppm_min2_1ppm_negative.csv ----------------------------------')
+aligned_all_neg = reading_MetAna_file('aligned_1ppm_min2_1ppm_negative.csv', has_labels=True)
+print(aligned_all_neg)
 
 def test_NaN_FeatRemove():
-    assert len(sca.NaN_Imputation(MetAna_O2, 1/2 +
-                                  0.00001).data) == len(MetAna_I2T.data.columns)-1
+    assert len(sca.NaN_Imputation(MetAna_O2, 1/2 + 0.00001)) == len(MetAna_I2T.columns)-1
 
 
 def test_NaN_MinValue():
-    Imputated = sca.NaN_Imputation(MetAna_O2, 0)
-    minimum = min(MetAna_O2.data.min()/2)
-    Bool = MetAna_O2.data.isnull()
-    values = Imputated.data[Bool == True].mean().mean()
-    assert str(values)[0:9] == str(minimum)[0:9]
-
-
-# Tests for remove_feat
-def test_FeatRemove():
-    assert len(sca.remove_feat(MetAna_O2, 1/2 +
-                                  0.00001).data) == len(MetAna_I2T.data.columns)-1
-
-
-# Base file for most normalizations, transformations and scaling methods
-MetAna_O2_I = sca.NaN_Imputation(MetAna_O2, 0) #Original file from MetaboAnalyst after NaN_Imputation function
-
-
-# Tests for Norm_Feat
-# Normalization by a reference feature only - 301/2791.68 (random choice)
-MetAna_N = reading_MetAna_files('MetAnalyst/MetAna_Norm.csv')
+    imputated = sca.NaN_Imputation(MetAna_O2, minsample=0)
+    minimum = (MetAna_O2.min().min())/2
+    where_null = MetAna_O2.isnull()
+    mean_imputed = imputated[where_null].mean().mean()
+    assert mean_imputed == approx(minimum)
 
 
 def test_Norm_Values():
-    norm = sca.Norm_Feat(MetAna_O2_I, "301/2791.68")
-    assert str(MetAna_N.data) == str(norm.data*1000)
-
+    """Normalization by a reference feature only - 301/2791.68 (random choice)."""
+    Imputated = sca.NaN_Imputation(MetAna_O2, 0)
+    norm = sca.Norm_Feat(Imputated, "301/2791.68")
+    # assert str(MetAna_N) == str(norm*1000)
+    assert_frame_equal(MetAna_N, norm*1000)
 
 # Tests for Norm_TotalInt
 
@@ -78,58 +88,65 @@ def test_Norm_Values():
 
 
 # Tests for glog
-MetAna_G = reading_MetAna_files('MetAnalyst/MetAna_Glog.csv')  # Pareto Scaling only
+MetAna_G = reading_MetAna_file('MetAnalyst/MetAna_Glog.csv')  # Pareto Scaling only
 
 
 def test_glog_values():
     glog = sca.glog(MetAna_O2_I)
-    assert str(MetAna_G.data) == str(glog.data)
+    # assert str(MetAna_G.data) == str(glog.data)
+    assert_frame_equal(MetAna_G, glog)
 
 
 def test_glog_lamb():
     lamb = 100000
-    y = MetAna_O2_I.data.copy()
+    y = MetAna_O2_I.copy()
     y = np.log2((y + (y**2 + lamb**2)**0.5)/2)
-    assert (y == (sca.glog(MetAna_O2_I, lamb = 100000).data)).all().all()
+    assert (y == (sca.glog(MetAna_O2_I, lamb = 100000))).all().all()
 
 
 # Tests for ParetoScal
-MetAna_P = reading_MetAna_files('MetAnalyst/MetAna_Pareto.csv')  # Pareto Scaling only
 
+MetAna_O2_I = sca.NaN_Imputation(MetAna_O2, 0)
 
 def test_ParetoScal_values():
-    pareto = sca.ParetoScal(MetAna_O2_I)
-    assert str(MetAna_P) == str(pareto)
+    Imputated = sca.NaN_Imputation(MetAna_O2, 0)
+    pareto = sca.ParetoScal(Imputated)
+    assert_frame_equal(MetAna_P, pareto)
 
 
 # Tests for MeanCentering
-
+# If Pareto and AutoScale work, MeanCentering should work
 
 # Tests for AutoScal
-MetAna_AS = reading_MetAna_files('MetAnalyst/MetAna_AutoScal.csv')  # Pareto Scaling only
+MetAna_AS = reading_MetAna_file('MetAnalyst/MetAna_AutoScal.csv')  # Pareto Scaling only
 
 
 def test_AutoScal_values():
     auto = sca.AutoScal(MetAna_O2_I)
-    assert str(MetAna_AS) == str(auto)
+    # assert str(MetAna_AS) == str(auto)
+    assert_frame_equal(MetAna_AS, auto)
 
 # Tests for RangeScal
-MetAna_RS = reading_MetAna_files('MetAnalyst/MetAna_RangeScal.csv')  # Pareto Scaling only
-MetAna_O2_I_RS = MetAna_O2_I.data.copy()
+
+MetAna_RS = reading_MetAna_file('MetAnalyst/MetAna_RangeScal.csv')  # Pareto Scaling only
+
 # Add row with same maximum and minimum value as well as missing values - the row should stay the same according to MetaboAnalyst
 # Maybe it should just be zero and missing values but that's a topic for another day
-MetAna_O2_I_RS.loc['205/2790.89'] = [100000, 100000, np.nan, np.nan, 100000, 100000, np.nan, np.nan, 100000, 100000, np.nan, np.nan]
+# TODO: OK, for another day it is!
 
+MetAna_O2_I_RS = MetAna_O2_I.copy()
+MetAna_O2_I_RS.loc['205/2790.89'] = [100000, 100000, np.nan, np.nan, 100000, 100000, np.nan, np.nan, 100000, 100000, np.nan, np.nan]
 
 def test_RangeScal_values():
     ranges = sca.RangeScal(MetAna_O2_I)
-    assert str(MetAna_RS) == str(ranges)
-
+    # assert str(MetAna_RS) == str(ranges)
+    assert_frame_equal(MetAna_RS, ranges)
 
 def test_RangeScal_ranges():
-    ranges = sca.RangeScal(AlignedSpectra(MetAna_O2_I_RS))
-    assert str(ranges.data.loc['205/2790.89']) == str(MetAna_O2_I_RS.loc['205/2790.89'])
-
+    "Testing invariance for features with null range."
+    ranges = sca.RangeScal(MetAna_O2_I_RS)
+    # assert str(ranges.loc['205/2790.89']) == str(MetAna_O2_I_RS.loc['205/2790.89'])
+    assert_series_equal(ranges.loc['205/2790.89'], MetAna_O2_I_RS.loc['205/2790.89'])
 
 # Tests for VastScal
 
@@ -138,32 +155,33 @@ def test_RangeScal_ranges():
 
 
 # Tests for search_for_ref_feat
-aligned_all_neg = read_aligned_spectra(
-    'aligned_1ppm_min2_1ppm_negative.csv', labels=True, sep=',')
+
+def test_Ref_Feat_finding2():
+    RefEst_Neg = sca.search_for_ref_feat(aligned_all_neg, 554.2615)
+    assert RefEst_Neg[0] == approx(554.26202000000001)
 
 
 def test_Ref_Feat_finding():
-    RefEst_Neg = sca.search_for_ref_feat(aligned_all_neg, 554.2615)
-    assert RefEst_Neg[0] == 554.26202000000001
-
-
-def test_Ref_Feat_finding2():
     RefEst_Neg = sca.search_for_ref_feat(MetAna_O, 300.5)
-    assert RefEst_Neg[0] == 301
-
+    assert RefEst_Neg[0] == approx(301)
 
 # Tests for dist_discrim
-Imputated_neg = sca.NaN_Imputation(aligned_all_neg, 0)
-Euc_neg = sca.ParetoScal(Imputated_neg)
-dist_euc_neg = dist.pdist(Euc_neg.data.T, metric='euclidean')
-Z_euc_neg = hier.linkage(dist_euc_neg, method='average')
+# Imputated_neg = sca.NaN_Imputation(aligned_all_neg, 0)
+# Euc_neg = sca.ParetoScal(Imputated_neg)
+preprocessed = sca.NaN_Imputation(aligned_all_neg, 0).pipe(sca.ParetoScal)
 
+dist_euclidian = dist.pdist(preprocessed.T, metric='euclidean')
+Z_euc = hier.linkage(dist_euclidian, method='average')
+
+# global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')
+# print(global_dist, discrims)
 
 def test_dist_dicrim_average():
-    discrim = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='average')
-    assert str(discrim[0]) == str(np.array(list(discrim[1].values())).mean())
+    global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')
+    # assert str(discrim_ave[0]) == str(np.array(list(discrim_ave[1].values())).mean())
+    assert global_dist == approx(np.array(list(discrims.values())).mean())
 
 
 def test_dist_dicrim_median():
-    discrim = sca.dist_discrim(aligned_all_neg, Z_euc_neg, method='median')
-    assert discrim[0] == np.median(list(discrim[1].values()))
+    global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='median')
+    assert global_dist == approx(np.median(list(discrims.values())))
