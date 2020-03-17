@@ -3,10 +3,8 @@ import metabolinks as mtl
 import metabolinks.transformations as trans
 import numpy as np
 
-from scipy.cluster import hierarchy as hier
-
 """Elimination of features with too many missing values, missing value estimation, normalization methods, generalized logarithmic
-transformation, reference feature estimation and centering and scaling methods. Discrimination distance of hierarchical clustering."""
+transformation, reference feature estimation and centering and scaling methods."""
 
 
 ### Missing Value Imputation and feature removal
@@ -265,106 +263,3 @@ def spectra_proc(df, minsample=0, Feat_mass=None, remove=True, do_glog=False, la
         df = ParetoScal(df)
     return df
 
-def dist_discrim(df, Z, method='average'):
-    """Give a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
-
-        This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
-        hierarchical clustering linkage matrix and the labels (in Spectra) of each sample. For each set of samples with the same label, it 
-        calculates the difference of distances between where the cluster with all the set of samples was formed and the cluster that joins 
-        those set of samples with another samples. The normalization of this distance is made by dividing said difference by the max 
-        distance between any two cluster. If the samples with the same label aren't all in the same cluster before any other sample joins 
-        them, the distance given to this set of samples is zero. It returns the measure of the normalized distance as well as a dictionary 
-        with all the calculated distances for all set of samples (labels).
-
-        df: Pandas DataFrame.
-        Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
-        method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
-        based on the distances calculated for each set of samples.
-
-        Returns: (global_distance, discrimination_distances)
-        global_distance: float or None; normalized discrimination distance measure
-        discrimination_distances: dict: dictionary with the discrimination distance for each label.
-    """
-
-    # Get metadata from df
-    unique_labels = df.cdl.unique_labels
-    n_unique_labels = df.cdl.label_count
-    all_labels = list(df.cdl.labels)
-    ns = len(df.cdl.samples)
-
-    # Create dictionary with number of samples per label
-    sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
-    min_len = min(sample_number.values())
-    max_len = max(sample_number.values())
-
-    # to_tree() returns root ClusterNode and ClusterNode list
-    _, cn_list = hier.to_tree(Z, rd=True)
-
-    # print('results from to_tree ----------------')
-    # for cn in cn_list[ns:]:
-    #     n_in_cluster = cn.get_count()
-    #     if not (min_len <= n_in_cluster <= max_len):
-    #         continue
-    #     ids = cn.pre_order(lambda x: x.id)
-    #     labels = [all_labels[i] for i in ids]
-    #     d = Z[cn.get_id() - ns, 2]
-    #     print(f'{cn.get_id()} --> {n_in_cluster} --> {ids} -- > {labels}')
-    #     print('distance = ', d)
-
-    # print('-------------------------------------')
-
-    # dists is a dicionary of cluster_id: distance. Distance is fetch from Z
-
-    dists = {cn.get_id(): Z[cn.get_id() - ns, 2] for cn in cn_list[ns:]}
-
-    # Calculate discriminating distances of a set of samples with the same label
-    # store in dictionary `discrims`.
-    # `total` accumulates total.
-
-    total = 0
-    discrims = {label: 0.0 for label in unique_labels}
-    # Z[-1,2] is the maximum distance between any 2 clusters
-    max_dist = Z[-1,2]
-
-    for cn in cn_list:
-        i = cn.get_id()
-        len_cluster = cn.get_count()
-        # skip if cluster too short or too long
-        if not (min_len <= len_cluster <= max_len):
-            continue
-
-        labelset = [all_labels[loc] for loc in cn.pre_order(lambda x: x.id)]
-        # get first element
-        label0 = labelset[0]
-
-        # check if cluster length == exactely the number of samples of label of 1st element.
-        # If so, all labels must also be equal
-        if len_cluster != sample_number[label0] or labelset.count(label0) != len_cluster:
-            continue
-
-        # Compute distances.
-        # find iteration when cluster i was integrated in a larger one
-        itera = np.where(Z == i)[0][0]
-        dif_dist = Z[itera, 2]
-
-        discrims[label0] = (dif_dist - dists[i]) / max_dist
-        total += discrims[label0]
-        # print(f'\n-----------\ncluster {i}, label set ----> {labelset}')
-        # print('discrims ---->', discrims)
-        # print('total so far ---->', total)
-
-    # Method to quantify a measure of a global discriminating distance for a linkage matrix.
-    if method == 'average':
-        separaM = total / n_unique_labels
-    elif method == 'median':
-        separaM = np.median(list(discrims.values()))
-        if separaM == 0:
-            separaM = None
-    else:
-        raise ValueError('Method should be one of: ["average", "median"].')
-    # print('return values *********')
-    # print(separaM)
-    # print(discrims)
-    # print('************************')
-
-    return separaM, discrims

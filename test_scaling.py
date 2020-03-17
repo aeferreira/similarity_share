@@ -3,13 +3,13 @@ import pytest
 from pytest import approx
 from pandas.testing import assert_frame_equal, assert_series_equal
 
-import scaling as sca
 import numpy as np
 import pandas as pd
 import scipy.spatial.distance as dist
 import scipy.cluster.hierarchy as hier
 
 import metabolinks as mtl
+import scaling as sca
 
 # Test file for the module scaling.
 # Needs files from MetaboAnalyst besides the ones in this repository (see MetAnalyst_Example.ipynb)
@@ -165,23 +165,4 @@ def test_Ref_Feat_finding():
     RefEst_Neg = sca.search_for_ref_feat(MetAna_O, 300.5)
     assert RefEst_Neg[0] == approx(301)
 
-# Tests for dist_discrim
-# Imputated_neg = sca.NaN_Imputation(aligned_all_neg, 0)
-# Euc_neg = sca.ParetoScal(Imputated_neg)
-preprocessed = sca.NaN_Imputation(aligned_all_neg, 0).pipe(sca.ParetoScal)
 
-dist_euclidian = dist.pdist(preprocessed.T, metric='euclidean')
-Z_euc = hier.linkage(dist_euclidian, method='average')
-
-# global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')
-# print(global_dist, discrims)
-
-def test_dist_dicrim_average():
-    global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='average')
-    # assert str(discrim_ave[0]) == str(np.array(list(discrim_ave[1].values())).mean())
-    assert global_dist == approx(np.array(list(discrims.values())).mean())
-
-
-def test_dist_dicrim_median():
-    global_dist, discrims = sca.dist_discrim(aligned_all_neg, Z_euc, method='median')
-    assert global_dist == approx(np.median(list(discrims.values())))

@@ -20,9 +20,114 @@ import metabolinks.transformations as trans
 # Apart from mergerank, other functions are incredibly specific to the objectives of this set of notebooks.
 # Functions present are for the different kinds of multivariate analysis made in the Jupyter Notebooks
 
-"""Rank creation for hierarchical clustering linkage matrices, discrimination distance for k-means clustering, oversampling based on a
-simple SMOTE method, different application of Random Forests to Spectra data, calculation of correlation coefficient between linkage
-matrices of two hierarchical clusterings."""
+"""Rank creation for hierarchical clustering linkage matrices, discrimination distance for k-means clustering and AHC,
+oversampling based on a simple SMOTE method, different application of Random Forests to Spectra data, calculation
+of correlation coefficient between linkage matrices of two hierarchical clusterings."""
+
+def dist_discrim(df, Z, method='average'):
+    """Give a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
+
+        This function calculates the distance from a certain number of samples with the same label to the closest samples using the 
+        hierarchical clustering linkage matrix and the labels (in Spectra) of each sample. For each set of samples with the same label, it 
+        calculates the difference of distances between where the cluster with all the set of samples was formed and the cluster that joins 
+        those set of samples with another samples. The normalization of this distance is made by dividing said difference by the max 
+        distance between any two cluster. If the samples with the same label aren't all in the same cluster before any other sample joins 
+        them, the distance given to this set of samples is zero. It returns the measure of the normalized distance as well as a dictionary 
+        with all the calculated distances for all set of samples (labels).
+
+        df: Pandas DataFrame.
+        Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
+        method: str; Available methods - "average", "median". This is the method to give the normalized discrimination distance measure
+        based on the distances calculated for each set of samples.
+
+        Returns: (global_distance, discrimination_distances)
+        global_distance: float or None; normalized discrimination distance measure
+        discrimination_distances: dict: dictionary with the discrimination distance for each label.
+    """
+
+    # Get metadata from df
+    unique_labels = df.cdl.unique_labels
+    n_unique_labels = df.cdl.label_count
+    all_labels = list(df.cdl.labels)
+    ns = len(df.cdl.samples)
+
+    # Create dictionary with number of samples per label
+    sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
+    min_len = min(sample_number.values())
+    max_len = max(sample_number.values())
+
+    # to_tree() returns root ClusterNode and ClusterNode list
+    _, cn_list = hier.to_tree(Z, rd=True)
+
+    # print('results from to_tree ----------------')
+    # for cn in cn_list[ns:]:
+    #     n_in_cluster = cn.get_count()
+    #     if not (min_len <= n_in_cluster <= max_len):
+    #         continue
+    #     ids = cn.pre_order(lambda x: x.id)
+    #     labels = [all_labels[i] for i in ids]
+    #     d = Z[cn.get_id() - ns, 2]
+    #     print(f'{cn.get_id()} --> {n_in_cluster} --> {ids} -- > {labels}')
+    #     print('distance = ', d)
+
+    # print('-------------------------------------')
+
+    # dists is a dicionary of cluster_id: distance. Distance is fetch from Z
+
+    dists = {cn.get_id(): Z[cn.get_id() - ns, 2] for cn in cn_list[ns:]}
+
+    # Calculate discriminating distances of a set of samples with the same label
+    # store in dictionary `discrims`.
+    # `total` accumulates total.
+
+    total = 0
+    discrims = {label: 0.0 for label in unique_labels}
+    # Z[-1,2] is the maximum distance between any 2 clusters
+    max_dist = Z[-1,2]
+
+    for cn in cn_list:
+        i = cn.get_id()
+        len_cluster = cn.get_count()
+        # skip if cluster too short or too long
+        if not (min_len <= len_cluster <= max_len):
+            continue
+
+        labelset = [all_labels[loc] for loc in cn.pre_order(lambda x: x.id)]
+        # get first element
+        label0 = labelset[0]
+
+        # check if cluster length == exactely the number of samples of label of 1st element.
+        # If so, all labels must also be equal
+        if len_cluster != sample_number[label0] or labelset.count(label0) != len_cluster:
+            continue
+
+        # Compute distances.
+        # find iteration when cluster i was integrated in a larger one
+        itera = np.where(Z == i)[0][0]
+        dif_dist = Z[itera, 2]
+
+        discrims[label0] = (dif_dist - dists[i]) / max_dist
+        total += discrims[label0]
+        # print(f'\n-----------\ncluster {i}, label set ----> {labelset}')
+        # print('discrims ---->', discrims)
+        # print('total so far ---->', total)
+
+    # Method to quantify a measure of a global discriminating distance for a linkage matrix.
+    if method == 'average':
+        separaM = total / n_unique_labels
+    elif method == 'median':
+        separaM = np.median(list(discrims.values()))
+        if separaM == 0:
+            separaM = None
+    else:
+        raise ValueError('Method should be one of: ["average", "median"].')
+    # print('return values *********')
+    # print(separaM)
+    # print(discrims)
+    # print('************************')
+
+    return separaM, discrims
+
 
 # Hierarchical Clustering - function necessary for calculation of Baker's Gamma Correlation Coefficient
 def mergerank(Z):
@@ -232,12 +337,15 @@ def simple_RF(df, iter_num=20, n_fold=3, n_trees=200):
 
        Spectra: AlignedSpectra object (from metabolinks).
        iter_num: int (default - 20); number of iterations that random forests are repeated.
-       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
-    samples belonging to one group).
+       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation
+            (max n_fold = minimum number of samples belonging to one group).
        n_trees: int (default - 200); number of trees in each random forest.
 
-       Returns: (list, list of tuples); list of the scores/accuracies of k-fold cross-validation of the random forests (each iteration 
-    and each group), descending ordered list of tuples with index number of feature, feature importance and name of feature.
+       Returns: (scores, import_features); 
+            scores: list of the scores/accuracies of k-fold cross-validation of the random forests
+                (one score for each each iteration and each group)
+            import_features: list of tuples (index number of feature, feature importance, feature name)
+                ordered by decreasing feature importance.
     """
 
     # Get data parts
@@ -276,14 +384,13 @@ def simple_RF(df, iter_num=20, n_fold=3, n_trees=200):
             f = f + 1
 
         cv.append(np.mean(CV))
-    # Joining and ordering all important features values from each random forest
+    
+    # Join and order all important features values from each random forest
     imp_feat_sum = imp_feat.sum(axis=0) / (iter_num * n_fold)
-    imp_feat_sum = sorted(enumerate(imp_feat_sum), key=lambda x: x[1], reverse=True)
-    imp_feat_ord = []
-    for i, j in imp_feat_sum:
-        imp_feat_ord.append((i, j, df.index[i]))
+    sorted_imp_feat = sorted(enumerate(imp_feat_sum), key=lambda x: x[1], reverse=True)
+    imp_feat_tuples = [(loc, importance, df.index[loc]) for loc, importance in sorted_imp_feat]
 
-    return cv, imp_feat_ord
+    return cv, imp_feat_tuples
 
 
 # In disuse
