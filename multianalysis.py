@@ -520,7 +520,7 @@ def overfit_RF(Spectra, iter_num=20, test_size=0.1, n_trees=200):
     the random forests, descending ordered list of tuples with index number of feature, feature importance and feature name, mean of
     3-fold cross-validation score.
     """
-    imp_feat = np.zeros((iter_num, len(Spectra.data)))
+    imp_feat = np.zeros((iter_num, len(Spectra)))
     cks = []
     scores = []
     CV = []
@@ -528,23 +528,23 @@ def overfit_RF(Spectra, iter_num=20, test_size=0.1, n_trees=200):
     for i in range(iter_num):  # number of times random forests are made
         # Random Forest setup and fit
         rf = skensemble.RandomForestClassifier(n_estimators=n_trees)
-        # X_train, X_test, y_train, y_test = train_test_split(Spectra.data.T,
-        # Spectra.labels, test_size = test_size)
-        rf.fit(Spectra.data.T, Spectra.labels)
+        # X_train, X_test, y_train, y_test = train_test_split(Spectra.T,
+        # Spectra.cdl.labels, test_size = test_size)
+        rf.fit(Spectra.T, Spectra.cdl.labels)
 
         # Extracting the results of the random forest model built
-        y_pred = rf.predict(Spectra.data.T)
+        y_pred = rf.predict(Spectra.T)
         imp_feat[i, :] = rf.feature_importances_
-        cks.append(cohen_kappa_score(Spectra.labels, y_pred))
-        scores.append(rf.score(Spectra.data.T, Spectra.labels))
-        CV.append(np.mean(cross_val_score(rf, Spectra.data.T, Spectra.labels, cv=3)))
+        cks.append(cohen_kappa_score(Spectra.cdl.labels, y_pred))
+        scores.append(rf.score(Spectra.T, Spectra.cdl.labels))
+        CV.append(np.mean(cross_val_score(rf, Spectra.T, Spectra.cdl.labels, cv=3)))
 
     # Joining and ordering all important features values from each random forest
     imp_feat_sum = imp_feat.sum(axis=0) / iter_num
     imp_feat_sum = sorted(enumerate(imp_feat_sum), key=lambda x: x[1], reverse=True)
     imp_feat_ord = []
     for i, j in imp_feat_sum:
-        imp_feat_ord.append((i, j, Spectra.data.index[i]))
+        imp_feat_ord.append((i, j, Spectra.index[i]))
 
     return np.mean(scores), np.mean(cks), imp_feat_ord, np.mean(CV)
 
