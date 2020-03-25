@@ -11,9 +11,6 @@ from sklearn.metrics import cohen_kappa_score, mean_squared_error, r2_score
 from sklearn.cross_decomposition import PLSRegression
 from matplotlib import cm
 
-# from metabolinks import AlignedSpectra
-
-import scaling as sca
 import metabolinks as mtl
 import metabolinks.transformations as trans
 
@@ -480,9 +477,9 @@ def RF_M4(df, reffeat, iter_num=20, test_size=0.1, n_trees=200):
         # NGP processing of the data
         Spectra_S_J = Spectra_S.join(X_test.T)
         Spectra_S_J.labels = Spectra_S.labels + y_test
-        Norm_S = sca.Norm_Feat(Spectra_S_J, reffeat)
-        glog_S = sca.glog(Norm_S, 0)
-        Euc_glog_S = sca.ParetoScal(glog_S)
+        Norm_S = trans.normalize_ref_feature(Spectra_S_J, reffeat)
+        glog_S = trans.glog(Norm_S)
+        Euc_glog_S = trans.pareto_scale(glog_S)
         X_train = Euc_glog_S.data.iloc[:, : -len(y_test)]
         X_test = Euc_glog_S.data.iloc[:, -len(y_test) :]
 
