@@ -36,7 +36,7 @@ print('IMPUTED ----------------------------------')
 MetAna_I = reading_MetAna_file('MetAnalyst/MetAna_Imputed.csv', has_labels=True)
 print(MetAna_I)
 print('NORMALIZED ----------------------------------')
-MetAna_N = reading_MetAna_file('MetAnalyst/MetAna_Norm.csv')
+MetAna_N = reading_MetAna_file('MetAnalyst/MetAna_Norm.csv') # Normalization by Reference Feature only
 print(MetAna_N)
 print('PARETO SCALED ONLY ----------------------------------')
 MetAna_P = reading_MetAna_file('MetAnalyst/MetAna_Pareto.csv')  # Pareto Scaling only
@@ -71,21 +71,43 @@ def test_NaN_MinValue():
     assert mean_imputed == approx(minimum)
 
 
-def test_Norm_Values():
+#Tests for Norm_Feat
+def test_Norm_RF_Values():
     """Normalization by a reference feature only - 301/2791.68 (random choice)."""
     Imputated = sca.NaN_Imputation(MetAna_O2, 0)
-    norm = sca.Norm_Feat(Imputated, "301/2791.68")
+    normRF = sca.Norm_Feat(Imputated, "301/2791.68")
     # assert str(MetAna_N) == str(norm*1000)
-    assert_frame_equal(MetAna_N, norm*1000)
+    assert_frame_equal(MetAna_N, normRF*1000)
 
 # Tests for Norm_TotalInt
+MetAna_NTI = reading_MetAna_file('MetAnalyst/MetAna_NTotalInt.csv')  # Normalization by Total Peak Area only
 
+def test_Norm_TI_Values():
+    """Normalization by the total peak area"""
+    Imputated = sca.NaN_Imputation(MetAna_O2, 0)
+    normTI = sca.Norm_TotalInt(Imputated)
+    assert_frame_equal(MetAna_NTI, normTI*1000)
 
 # Tests for Norm_PQN
+MetAna_PQN = reading_MetAna_file('MetAnalyst/MetAna_PQN.csv')  # Probabilistic Quotient Normalization using ko15 as a reference sample 
+#only
 
+def test_Norm_PQN_Values_Ref_Sample():
+    """Probabilistic Quotient Normalization - testing with reference sample as a sample of the dataset."""
+    Imputated = sca.NaN_Imputation(MetAna_O2, 0)
+    normPQN = sca.Norm_PQN(Imputated, ref_sample = Imputated.columns[0])
+    assert_frame_equal(MetAna_PQN, normPQN)
+
+#Maybe do other tests for other types of reference samples
 
 # Tests for Norm_Quantile
+MetAna_QN = reading_MetAna_file('MetAnalyst/MetAna_QuantileN.csv')  # Quantile Normalization only
 
+def test_Norm_QN_Values():
+    """Quantile Normalization with reference sample type = mean"""
+    Imputated = sca.NaN_Imputation(MetAna_O2, 0)
+    normQN = sca.Norm_Quantile(Imputated, ref_type = 'mean')
+    assert_frame_equal(MetAna_QN, normQN)
 
 # Tests for glog
 MetAna_G = reading_MetAna_file('MetAnalyst/MetAna_Glog.csv')  # Pareto Scaling only
@@ -105,7 +127,6 @@ def test_glog_lamb():
 
 
 # Tests for ParetoScal
-
 MetAna_O2_I = sca.NaN_Imputation(MetAna_O2, 0)
 
 def test_ParetoScal_values():
@@ -118,7 +139,7 @@ def test_ParetoScal_values():
 # If Pareto and AutoScale work, MeanCentering should work
 
 # Tests for AutoScal
-MetAna_AS = reading_MetAna_file('MetAnalyst/MetAna_AutoScal.csv')  # Pareto Scaling only
+MetAna_AS = reading_MetAna_file('MetAnalyst/MetAna_AutoScal.csv')  # Auto Scaling only
 
 
 def test_AutoScal_values():
@@ -128,7 +149,7 @@ def test_AutoScal_values():
 
 # Tests for RangeScal
 
-MetAna_RS = reading_MetAna_file('MetAnalyst/MetAna_RangeScal.csv')  # Pareto Scaling only
+MetAna_RS = reading_MetAna_file('MetAnalyst/MetAna_RangeScal.csv')  # Range Scaling only
 
 # Add row with same maximum and minimum value as well as missing values - the row should stay the same according to MetaboAnalyst
 # Maybe it should just be zero and missing values but that's a topic for another day

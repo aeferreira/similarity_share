@@ -41,7 +41,7 @@ def Norm_PQN(df, ref_sample='mean'):
         ref_sample2 = df.T / df.mean(axis = 1)
     elif ref_sample == 'median': #Median spectre of all samples
         ref_sample2 = df.T/df.median(axis = 1)
-    elif ref_sample in df.cdl.samples: #Specified sample of the spectra
+    elif ref_sample in df.columns: #Specified sample of the spectra. ('Label','Sample') if data is labeled
         ref_sample2 = df.T/df.loc[:,ref_sample]
     else: #Actual sample given
         ref_sample2 = df.T/ref_sample
