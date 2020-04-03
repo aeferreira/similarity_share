@@ -68,16 +68,16 @@ def Norm_Quantile(df, ref_type='mean'):
     ref_spectra = df.copy()
     ranks = df.copy()
 
-    for i in range(len(norm)):
+    for i in range(len(norm.columns)):
         #Determining the ranks of each entry in the same row (same variable) in the dataset
-        ref_spectra.iloc[i] = norm.iloc[i].sort_values().values
-        ranks.iloc[i] = norm.iloc[i].rank(na_option='top')
+        ref_spectra.iloc[:,i] = norm.iloc[:,i].sort_values().values
+        ranks.iloc[:,i] = norm.iloc[:,i].rank(na_option='top')
 
     #Determining the reference sample for normalization based on the ref_type chosen (applied on the columns).
     if ref_type == 'mean':
-        ref_sample = ref_spectra.mean(axis=0).values
+        ref_sample = ref_spectra.mean(axis=1).values
     elif ref_type == 'median':
-        ref_sample = ref_spectra.median(axis=0).values
+        ref_sample = ref_spectra.median(axis=1).values
     else:
         raise ValueError('Type not recognized. Available ref_type: "mean", "median".')
 
