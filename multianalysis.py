@@ -748,7 +748,7 @@ def model_PLSDA(df, matrix, n_comp,
                 feat_type='Coef',
                 figures=False
 ):
-    """Perform PLS-DA with 3-fold cross-validation.
+    """Perform PLS-DA with n-fold cross-validation.
 
        df: pandas DataFrame; includes X equivalent in PLS-DA (training vectors).
        matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
@@ -760,9 +760,12 @@ def model_PLSDA(df, matrix, n_comp,
        figures: bool/int (default: False); only for 3-fold CV, if an integer n, shows distribution of samples of n groups in 3 scatter
     plots with the 2 most important latent variables (components) - one for each group of cross-validation.
 
-       Returns: (list, list, list, list of tuples, list of tuples); accuracy in group selection, 3-fold cross-validation score, r2 score
-    of the model, descending ordered list of tuples with index number of feature, feature importance and name of feature for X_Weights 
-    and Regression Coefficients (two methods of feature selection) respectively.
+    Returns: (accuracy, n-fold score, r2score, import_features);
+    accuracy: list of accuracy values in group selection
+    n-fold score : n-fold cross-validation score
+    r2score: r2 score of the model
+    import_features: list of tuples (index number of feature, feature importance, feature name)
+        ordered by decreasing feature importance.
     """
     # Setting up lists and matrices to store results
     CV = []
@@ -774,14 +777,14 @@ def model_PLSDA(df, matrix, n_comp,
 
     # Number of iterations equal to iter_num
     for i in range(iter_num):
-        # Splitting data into 3 groups for 3-fold cross-validation
+        # Splitting data into 3 groups for n-fold cross-validation
         kf = StratifiedKFold(n_fold, shuffle=True)
-        # Setting up variables for results of the application of 3-fold cross-validated PLS-DA
+        # Setting up variables for results of the application of n-fold cross-validated PLS-DA
         certo = 0
         cv = []
         cvr2 = []
 
-        # Repeating for each of the 3 groups
+        # Repeating for each of the groups
         for train_index, test_index in kf.split(df.T, all_labels):
             plsda = PLSRegression(n_components=n_comp, scale=False)
             X_train, X_test = df.iloc[:, train_index].T, df.iloc[:, test_index].T
@@ -862,7 +865,7 @@ def model_PLSDA(df, matrix, n_comp,
     return Accuracy, CV, CVR2, Imp_ord
 
 
-def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False):
+def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False, encode2as1vector=True):
     """Perform permutation test of PLS-DA on an AlignedSpectra with 3-fold cross-validation used to obtain the model's and its
     permutations accuracy.
 
@@ -887,13 +890,20 @@ def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False):
     all_labels = list(df.cdl.labels)
     unique_labels = list(df.cdl.unique_labels)
 
-    if len(unique_labels) > 2:
+    is1vector = len(unique_labels) == 2 and encode2as1vector
+
+    if not is1vector:
         # Setting up the y matrix for when there are more than 2 classes (multi-class)
         matrix = pd.get_dummies(all_labels)
         matrix = matrix[unique_labels]
     else:
-        # Setting the y list when there are only 2 classes
-        matrix = unique_labels
+        # Create two binary vectors
+        matrix = pd.get_dummies(all_labels)
+        matrix = matrix[unique_labels]
+        # use first column to encode
+        matrix = matrix.iloc[:, 0].values # a numpy array
+        # keep a copy to use later
+        correct_labels = list(matrix[:])
 
     # Splitting data into n_fold groups for n-fold cross-validation
     kf = StratifiedKFold(
@@ -914,10 +924,13 @@ def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False):
                 temp[temp.columns[train_index]].T,
                 temp[temp.columns[test_index]].T,
             )
-            y_train, y_test = (
-                matrix.T[matrix.T.columns[train_index]].T,
-                matrix.T[matrix.T.columns[test_index]].T,
-            )
+            if not is1vector:
+                y_train, y_test = (
+                    matrix.T[matrix.T.columns[train_index]].T,
+                    matrix.T[matrix.T.columns[test_index]].T,
+                )
+            else:
+                y_train, y_test = matrix[train_index], matrix[test_index]
             # Fitting the model
             plsda.fit(X=X_train, Y=y_train)
 
@@ -926,11 +939,18 @@ def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False):
 
             # Decision to which group each sample belongs to based on y_pred
             # Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
-            for i in range(len(y_pred)):
-                if list(y_test.iloc[i, :]).index(max(y_test.iloc[i, :])) == np.argmax(
-                    y_pred[i]
-                ):
-                    certo = certo + 1  # Correct prediction
+            if not is1vector:
+                for i in range(len(y_pred)):
+                    if list(y_test.iloc[i, :]).index(max(y_test.iloc[i, :])) == np.argmax(
+                        y_pred[i]
+                    ):
+                        certo += 1  # Correct prediction
+            else:
+                rounded = np.round(y_pred)
+                for i in range(len(y_pred)):
+                    if rounded[i] == correct_labels[i]:
+                        certo += 1
+
 
         # Calculating the accuracy of the group predicted and storing score results (for original and permutated labels)
         Accuracy.append(certo / len(all_labels))
@@ -940,10 +960,7 @@ def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False):
     # Taking k-fold cross-validation accuracy for the non-shuffled (labels) dataset and p-value calculation
     CV = Accuracy[0]
     pvalue = (
-        sum(
-            [Accuracy[i] for i in range(1, len(Accuracy)) if Accuracy[i] >= Accuracy[0]]
-        )
-        + 1
+        sum( [Accuracy[i] for i in range(1, len(Accuracy)) if Accuracy[i] >= Accuracy[0]] ) + 1
     ) / (iter_num + 1)
 
     return CV, Accuracy[1:], pvalue
