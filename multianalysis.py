@@ -357,7 +357,7 @@ def simple_RF(df, iter_num=20, n_fold=3, n_trees=200):
     imp_feat = np.zeros((iter_num * n_fold, nfeats))
     cv = []
     f = 0
-    for i in range(iter_num):  # number of times random forests cross-validation is made
+    for _ in range(iter_num):  # number of times random forests cross-validation is made
         # Dividing dataset in balanced n_fold groups
         kf = StratifiedKFold(n_fold, shuffle=True)
         CV = []
@@ -468,7 +468,7 @@ def RF_M4(df, reffeat, iter_num=20, test_size=0.1, n_trees=200):
     scores = []
     for i in range(iter_num):
         # Splitting data and performing SMOTE on the training set.
-        X_train, X_test, y_train, y_test = train_test_split(
+        X_train, X_test, _, y_test = train_test_split(
             df.T, df.cdl.labels, test_size=test_size
         )
         X_Aligned = X_train.T
@@ -572,7 +572,7 @@ def permutation_RF(df, iter_num=100, n_fold=3, n_trees=200):
     )
     all_labels = tuple(df.cdl.labels)
 
-    for i in range(iter_num + 1):
+    for _ in range(iter_num + 1):
         # number of different permutations + original dataset where random forests cross-validation will be made
         # Temporary dataframe with columns in order of the NewC
         temp = df[NewC]
@@ -666,12 +666,48 @@ def Dendrogram_Sim(Z, zdist, Y, ydist, type='cophenetic', Trace=False):
 
 # --------- PLS-DA functions ---------------------
 
+def PLSscores_with_labels(df, n_components, labels=None, scale=False, encode2as1vector=True):
+    
+    # create label lists
+    if labels is None:
+        all_labels = list(df.cdl.labels)
+        unique_labels = list(df.cdl.unique_labels)
+    else:
+        all_labels = list(labels)
+        unique_labels = list(pd.unique(all_labels))
+    is1vector = (len(unique_labels) == 2) and encode2as1vector
 
-def optim_PLS(df, matrix, max_comp=50, n_fold=3):
+    matrix = _generate_y_PLSDA(all_labels, unique_labels, is1vector)
+
+    plsda = PLSRegression(n_components=n_components, scale=scale) # Nº components here doesn't matter
+
+    #Fitting the model and getting the X_scores
+    plsda.fit(X=df.T,Y=matrix)
+    LV_score = pd.DataFrame(plsda.x_scores_, columns=[f'LV {i}' for i in range(1, n_components+1)])
+    labels_col = pd.DataFrame(all_labels, columns=['Label'])
+    LV_score = pd.concat([LV_score, labels_col], axis=1)
+    return LV_score
+
+def _generate_y_PLSDA(all_labels, unique_labels, is1vector):
+    if not is1vector:
+        # Setting up the y matrix for when there are more than 2 classes (multi-class)
+        matrix = pd.get_dummies(all_labels)
+        matrix = matrix[unique_labels]
+    else:
+        # Create two binary vectors
+        matrix = pd.get_dummies(all_labels)
+        matrix = matrix[unique_labels]
+        # use first column to encode
+        matrix = matrix.iloc[:, 0].values # a numpy array
+    return matrix
+
+
+
+def optim_PLS(df, labels=None, encode2as1vector=True, max_comp=50, n_fold=3):
     """Searches for an optimum number of components to use in PLS-DA by accuracy (3-fold cross validation) and mean-squared errors.
 
     df: DataFrame; X equivalent in PLS-DA (training vectors).
-    matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
+    labels: optional labels to target
     max_comp: integer; upper limit for the number of components used.
     n_fold: int (default - 3); number of groups to divide dataset in
     for k-fold cross-validation (max n_fold = minimum number of samples
@@ -683,24 +719,38 @@ def optim_PLS(df, matrix, max_comp=50, n_fold=3):
     CVs = []
     CVr2s = []
     MSEs = []
+
+    # create label lists
+    if labels is None:
+        all_labels = list(df.cdl.labels)
+        unique_labels = list(df.cdl.unique_labels)
+    else:
+        all_labels = list(labels)
+        unique_labels = list(pd.unique(all_labels))
+
+    is1vector = len(unique_labels) == 2 and encode2as1vector
+
+    matrix = _generate_y_PLSDA(all_labels, unique_labels, is1vector)
+
     # Repeating for each component from 1 to max_comp
     for i in range(1, max_comp + 1):
         cv = []
         cvr2 = []
         mse = []
-        all_labels = list(df.cdl.labels)
 
         # Splitting data into 3 groups for 3-fold cross-validation
         kf = StratifiedKFold(n_fold, shuffle=True)
         # Repeating for each of the 3 groups
         for train_index, test_index in kf.split(df.T, all_labels):
             plsda = PLSRegression(n_components=i, scale=False)
-            # X_train, X_test = df[df.columns[train_index]].T, df[df.columns[test_index]].T
             X_train, X_test = df.iloc[:, train_index].T, df.iloc[:, test_index].T
-            y_train, y_test = (
-                matrix.T[matrix.T.columns[train_index]].T,
-                matrix.T[matrix.T.columns[test_index]].T,
-            )
+            if not is1vector:
+                y_train, y_test = (
+                    matrix.T[matrix.T.columns[train_index]].T,
+                    matrix.T[matrix.T.columns[test_index]].T,
+                )
+            else:
+                y_train, y_test = matrix[train_index], matrix[test_index]
 
             # Fitting the model
             plsda.fit(X=X_train, Y=y_train)
@@ -742,30 +792,33 @@ def _calculate_vips(model):
     return vips
 
 
-def model_PLSDA(df, matrix, n_comp,
+def model_PLSDA(df, n_comp,
+                labels=None,
                 n_fold=3,
                 iter_num=100,
+                encode2as1vector=True,
                 feat_type='Coef',
                 figures=False
 ):
     """Perform PLS-DA with n-fold cross-validation.
 
-       df: pandas DataFrame; includes X equivalent in PLS-DA (training vectors).
-       matrix: pandas DataFrame; y equivalent in PLS-DA (target vectors).
-       n_comp: integer; number of components to use in PLS-DA.
-       n_fold: int (default: 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
-    samples belonging to one group).
+    df: pandas DataFrame; includes X equivalent in PLS-DA (training vectors).
+    labels: optional target labels.
+    n_comp: integer; number of components to use in PLS-DA.
+    n_fold: int (default: 3); number of groups to divide dataset in for k-fold cross-validation
+        (max n_fold = minimum number of samples belonging to one group).
     iter_num: int (default: 100); number of iterations that PLS-DA is repeated.
-       feat_type: string (default: 'Coef'); types of feature importance metrics to use; accepted: {'VIP', 'Coef', 'Weights'}.
-       figures: bool/int (default: False); only for 3-fold CV, if an integer n, shows distribution of samples of n groups in 3 scatter
-    plots with the 2 most important latent variables (components) - one for each group of cross-validation.
+    feat_type: string (default: 'Coef'); types of feature importance metrics to use; accepted: {'VIP', 'Coef', 'Weights'}.
+    figures: bool/int (default: False); only for 3-fold CV, if an integer n,
+        shows distribution of samples of n groups in 3 scatter plots with the
+        2 most important latent variables (components) - one for each group of cross-validation.
 
     Returns: (accuracy, n-fold score, r2score, import_features);
-    accuracy: list of accuracy values in group selection
-    n-fold score : n-fold cross-validation score
-    r2score: r2 score of the model
-    import_features: list of tuples (index number of feature, feature importance, feature name)
-        ordered by decreasing feature importance.
+        accuracy: list of accuracy values in group selection
+        n-fold score : n-fold cross-validation score
+        r2score: r2 score of the model
+        import_features: list of tuples (index number of feature, feature importance, feature name)
+            ordered by decreasing feature importance.
     """
     # Setting up lists and matrices to store results
     CV = []
@@ -773,27 +826,47 @@ def model_PLSDA(df, matrix, n_comp,
     Accuracy = []
     Imp_Feat = np.zeros((iter_num * n_fold, len(df.index)))
     f = 0
-    all_labels = list(df.cdl.labels)
+
+    # create label lists
+    if labels is None:
+        all_labels = list(df.cdl.labels)
+        unique_labels = list(df.cdl.unique_labels)
+    else:
+        all_labels = list(labels)
+        unique_labels = list(pd.unique(all_labels))
+
+    is1vector = len(unique_labels) == 2 and encode2as1vector
+
+    matrix = _generate_y_PLSDA(all_labels, unique_labels, is1vector)
+
+    if is1vector:
+        # keep a copy to use later
+        correct_labels = matrix.copy()
 
     # Number of iterations equal to iter_num
     for i in range(iter_num):
-        # Splitting data into 3 groups for n-fold cross-validation
+        # use startified n-fold cross-validation with shuffling
         kf = StratifiedKFold(n_fold, shuffle=True)
-        # Setting up variables for results of the application of n-fold cross-validated PLS-DA
-        certo = 0
+        
+        # Setting up storing variables for n-fold cross-validation
+        nright = 0
         cv = []
         cvr2 = []
 
-        # Repeating for each of the groups
+        # Iterate through cross-validation procedure
         for train_index, test_index in kf.split(df.T, all_labels):
             plsda = PLSRegression(n_components=n_comp, scale=False)
             X_train, X_test = df.iloc[:, train_index].T, df.iloc[:, test_index].T
-            y_train, y_test = (
-                matrix.T[matrix.T.columns[train_index]].T,
-                matrix.T[matrix.T.columns[test_index]].T,
-            )
+            if not is1vector:
+                y_train, y_test = (
+                    matrix.T[matrix.T.columns[train_index]].T,
+                    matrix.T[matrix.T.columns[test_index]].T,
+                )
+            else:
+                y_train, y_test = matrix[train_index], matrix[test_index]
+                correct = correct_labels[test_index]
 
-            # Fit the model
+            # Fit PLS model
             plsda.fit(X=X_train, Y=y_train)
 
             # Obtain results with the test group
@@ -801,14 +874,20 @@ def model_PLSDA(df, matrix, n_comp,
             cvr2.append(r2_score(plsda.predict(X_test), y_test))
             y_pred = plsda.predict(X_test)
 
-            # Decision to which group each sample belongs to based on y_pred
+            # Decision rule for classification
             # Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
-            for i in range(len(y_pred)):
-                # if list(y_test.iloc[:,i]).index(max(y_test.iloc[:,i])) == np.argmax(y_pred[i]):
-                if list(y_test.iloc[i, :]).index(max(y_test.iloc[i, :])) == np.argmax(
-                    y_pred[i]
-                ):
-                    certo = certo + 1  # Correct prediction
+            # In case of 1,0 encoding for two groups, round to nearest integer to compare
+            if not is1vector:
+                for i in range(len(y_pred)):
+                    if list(y_test.iloc[i, :]).index(max(y_test.iloc[i, :])) == np.argmax(
+                        y_pred[i]
+                    ):
+                        nright += 1  # Correct prediction
+            else:
+                rounded = np.round(y_pred)
+                for i in range(len(y_pred)):
+                    if rounded[i] == correct[i]:
+                        nright += 1  # Correct prediction
 
             # Calculate important features (3 different methods to choose from)
             if feat_type == 'VIP':
@@ -851,7 +930,7 @@ def model_PLSDA(df, matrix, n_comp,
                     ax.text(x[0], x[1], label, fontsize=8)
 
         # Calculate the accuracy of the group predicted and storing score results
-        Accuracy.append(certo / len(all_labels))
+        Accuracy.append(nright / len(all_labels))
         CV.append(np.mean(cv))
         CVR2.append(np.mean(cvr2))
 
@@ -865,65 +944,61 @@ def model_PLSDA(df, matrix, n_comp,
     return Accuracy, CV, CVR2, Imp_ord
 
 
-def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False, encode2as1vector=True):
+def permutation_PLSDA(df, n_comp, labels=None, n_fold=3, iter_num=100, figures=False, encode2as1vector=True):
     """Perform permutation test of PLS-DA on an AlignedSpectra with 3-fold cross-validation used to obtain the model's and its
     permutations accuracy.
 
-       df: DataFrame. Includes X and Y equivalent in PLS-DA (training vectors and groups).
-       n_comp: integer; number of components to use in PLS-DA.
-       n_fold: int (default - 3); number of groups to divide dataset in for k-fold cross-validation (max n_fold = minimum number of
-    samples belonging to one group).
+    df: DataFrame. Includes X and Y equivalent in PLS-DA (training vectors and groups).
+    n_comp: integer; number of components to use in PLS-DA.
+    n_fold: int (default - 3); number of groups to divide dataset in
+        for k-fold cross-validation (max n_fold = minimum number of samples belonging to one group).
     iter_num: int (default - 100); number of permutations made (times labels are shuffled).
 
-       Returns: (scalar, list of scalars, scalar); accuracy of k-fold cross-validation of the PLS-DA made, accuracy of all
-    permutations made of k-fold cross-validation of the PLS-DA made, p-value (number of times permutation accuracy > original
-    accuracy + 1)/(number of permutations + 1).
+    Returns: (scalar, list of scalars, scalar);
+        accuracy of k-fold cross-validation of the PLS-DA made
+        accuracy of all permutations made of k-fold cross-validation
+        p-value ((number of permutations with accuracy > original accuracy) + 1)/(number of permutations + 1).
     """
-    # Setting up a list to store results
+    # list to store results
     Accuracy = []
 
-    # Setting list of columns to shuffle and dataframe of the data to put columns in NewC shuffled order
+    # list of columns to shuffle and dataframe of the data to put columns in each NewC shuffled order
     NewC = list(df.columns.copy())
-    df = df.copy()
+    df = df.copy() # TODO: check if this copy is really necessary
 
-    # Matrix formation
-    all_labels = list(df.cdl.labels)
-    unique_labels = list(df.cdl.unique_labels)
+    # create label lists
+    if labels is None:
+        all_labels = list(df.cdl.labels)
+        unique_labels = list(df.cdl.unique_labels)
+    else:
+        all_labels = list(labels)
+        unique_labels = list(pd.unique(all_labels))
 
     is1vector = len(unique_labels) == 2 and encode2as1vector
 
-    if not is1vector:
-        # Setting up the y matrix for when there are more than 2 classes (multi-class)
-        matrix = pd.get_dummies(all_labels)
-        matrix = matrix[unique_labels]
-    else:
-        # Create two binary vectors
-        matrix = pd.get_dummies(all_labels)
-        matrix = matrix[unique_labels]
-        # use first column to encode
-        matrix = matrix.iloc[:, 0].values # a numpy array
-        # keep a copy to use later
-        correct_labels = list(matrix[:])
+    matrix = _generate_y_PLSDA(all_labels, unique_labels, is1vector)
 
-    # Splitting data into n_fold groups for n-fold cross-validation
-    kf = StratifiedKFold(
-        n_fold, shuffle=True, random_state=np.random.randint(1000000000)
-    )
+    if is1vector:
+        # keep a copy to use later
+        correct_labels = matrix.copy()
+
+    # Use stratified n_fold cross-validation
+    set_random = np.random.randint(1000000000)
+    kf = StratifiedKFold(n_fold, shuffle=True, random_state=set_random)
+
     # Number of permutations + dataset with non-shuffled labels equal to iter_num + 1
     for i in range(iter_num + 1):
         # Temporary dataframe with columns in order of the NewC
         temp = df[NewC]
         # Setting up variables for results of the application of 3-fold cross-validated PLS-DA
-        certo = 0
+        nright = 0
 
         # Repeating for each of the n groups
         for train_index, test_index in kf.split(df.T, all_labels):
             # plsda model building for each of the n stratified groups amde
             plsda = PLSRegression(n_components=n_comp, scale=False)
-            X_train, X_test = (
-                temp[temp.columns[train_index]].T,
-                temp[temp.columns[test_index]].T,
-            )
+            X_train, X_test = (temp[temp.columns[train_index]].T,
+                              temp[temp.columns[test_index]].T)
             if not is1vector:
                 y_train, y_test = (
                     matrix.T[matrix.T.columns[train_index]].T,
@@ -931,33 +1006,36 @@ def permutation_PLSDA(df, n_comp, n_fold=3, iter_num=100, figures=False, encode2
                 )
             else:
                 y_train, y_test = matrix[train_index], matrix[test_index]
+                correct = correct_labels[test_index]
             # Fitting the model
             plsda.fit(X=X_train, Y=y_train)
 
-            # Obtaining results with the test group
+            # Predictions the test group
             y_pred = plsda.predict(X_test)
 
-            # Decision to which group each sample belongs to based on y_pred
+            # Decision rule for classification
             # Decision rule chosen: sample belongs to group where it has max y_pred (closer to 1)
+            # In case of 1,0 encoding for two groups, round to nearest integer to compare
             if not is1vector:
                 for i in range(len(y_pred)):
                     if list(y_test.iloc[i, :]).index(max(y_test.iloc[i, :])) == np.argmax(
                         y_pred[i]
                     ):
-                        certo += 1  # Correct prediction
+                        nright += 1  # Correct prediction
             else:
                 rounded = np.round(y_pred)
                 for i in range(len(y_pred)):
-                    if rounded[i] == correct_labels[i]:
-                        certo += 1
+                    if rounded[i] == correct[i]:
+                        nright += 1  # Correct prediction
 
 
-        # Calculating the accuracy of the group predicted and storing score results (for original and permutated labels)
-        Accuracy.append(certo / len(all_labels))
-        # Shuffle dataset labels - 1 permutation of the labels
+        # Calculate accuracy for this iteration
+        Accuracy.append(nright / len(all_labels))
+        # Shuffle dataset columns - 1 permutation of the labels
         np.random.shuffle(NewC)
 
-    # Taking k-fold cross-validation accuracy for the non-shuffled (labels) dataset and p-value calculation
+    # return also the k-fold cross-validation accuracy for the non-shuffled dataset
+    # and the p-value
     CV = Accuracy[0]
     pvalue = (
         sum( [Accuracy[i] for i in range(1, len(Accuracy)) if Accuracy[i] >= Accuracy[0]] ) + 1
