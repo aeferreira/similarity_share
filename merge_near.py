@@ -4,11 +4,11 @@ import pandas as pd
 # Try to reduce repetition of features with near m/z
 # Features within ppmtol and "complementary" get merged
 
-store = pd.HDFStore('alignments.h5')
+store = pd.HDFStore('alignments_new.h5')
 data_pos = store.get('groups_1ppm_min2_all_1ppm_pos')
 data_neg = store.get('groups_1ppm_min2_all_1ppm_neg')
 
-ppmtol = 3
+ppmtol = 1
 
 def merge_near_mz(df, ppmtol):
     mz = df.index
@@ -71,5 +71,5 @@ filtered_dataneg.info()
 data_pos.info()
 filtered_datapos.info()
 
-store.put('groups_1ppm_min2_all_3ppm_pos_clean', filtered_datapos, format='table')
-store.put('groups_1ppm_min2_all_3ppm_neg_clean', filtered_dataneg, format='table')
+store.put('groups_1ppm_min2_all_1ppm_pos_clean', filtered_datapos, format='table')
+store.put('groups_1ppm_min2_all_1ppm_neg_clean', filtered_dataneg, format='table')
