@@ -7,7 +7,7 @@ import sklearn.cluster as skclust
 import sklearn.ensemble as skensemble
 import random as rd
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
-from sklearn.metrics import cohen_kappa_score, mean_squared_error, r2_score
+from sklearn.metrics import cohen_kappa_score, mean_squared_error, r2_score, adjusted_rand_score
 from sklearn.cross_decomposition import PLSRegression
 from matplotlib import cm
 
@@ -20,6 +20,7 @@ import metabolinks.transformations as trans
 """Rank creation for hierarchical clustering linkage matrices, discrimination distance for k-means clustering and AHC,
 oversampling based on a simple SMOTE method, different application of Random Forests to Spectra data, calculation
 of correlation coefficient between linkage matrices of two hierarchical clusterings."""
+
 
 def dist_discrim(df, Z, method='average'):
     """Give a measure of the normalized distance that a group of samples (same label) is from all other samples in hierarchical clustering.
@@ -80,7 +81,7 @@ def dist_discrim(df, Z, method='average'):
     total = 0
     discrims = {label: 0.0 for label in unique_labels}
     # Z[-1,2] is the maximum distance between any 2 clusters
-    max_dist = Z[-1,2]
+    max_dist = Z[-1, 2]
 
     for cn in cn_list:
         i = cn.get_id()
@@ -129,7 +130,7 @@ def dist_discrim(df, Z, method='average'):
 # Hierarchical Clustering - function necessary for calculation of Baker's Gamma Correlation Coefficient
 def mergerank(Z):
     """Creates a 'rank' of the iteration number two samples were linked to the same cluster.
-       
+
        Z: 2-D array; the return of the linkage function in scypy.stats.hierarchy.
 
        Returns: Matrix/2-D array; Symmetrical Square Matrix (dimensions: len(Z)+1 by len(Z)+1), (i,j) position is the iteration 
@@ -151,7 +152,7 @@ def mergerank(Z):
             clust[nZ + 1 + r] = (Z[r, 0], Z[r, 1], )
         else:
             # Dictionary with the elements in the cluster formed at iteration r.
-            clust[nZ + 1 + r] = (clust[Z[r, 0]] + clust[Z[r, 1]])  
+            clust[nZ + 1 + r] = (clust[Z[r, 0]] + clust[Z[r, 1]])
             for i in range(0, len(clust[Z[r, 0]])):
                 for j in range(0, len(clust[Z[r, 1]])):
                     kmatrix[int(clust[Z[r, 0]][i]), int(clust[Z[r, 1]][j])] = r + 1
@@ -160,23 +161,58 @@ def mergerank(Z):
 
 
 # K-means Clustering
+def Kmeans(dfdata, n_labels, iter_num, best_fraction):
+    """Performs K-means clustering (scikit learn) n times and returns the best x fraction of them (based on their SSE).
+
+       Auxiliary funtion to Kmeans_discrim. SSEs not ordered.
+
+       dfdata: Pandas DataFrame.
+       n_labels: integer; number of different labels in the data (number of clusters)
+       iter_num: integer; number of different iterations of k-means clustering to perform.
+       best_fraction: scalar; fraction of the best Clusterings (based on their SSE) to return.
+
+       returns: list, list; list of (int(iter_num*best_fraction)+1) K-means clustering fits and corresponding list of SSEs (inertia)
+    of each fit (not ordered)."""
+
+    # Store results SSE's and Kmeans
+    SSE = []
+    Kmean_store = []
+
+    for i in range(iter_num):
+        Kmean2 = skclust.KMeans(n_clusters=n_labels)
+        Kmean = Kmean2.fit(dfdata.data_matrix)  # Fit K-means clustering
+
+        # List of int(iter_num*best_fraction)+1 elements to store the final list of K-means fit
+        if i < (int(iter_num*best_fraction)+1):
+            SSE.append(Kmean.inertia_)
+            Kmean_store.append(Kmean)
+        # Replace the 'worst' K-mean fit in the list everytime a better one appears
+        elif Kmean.inertia_ < max(SSE):
+            SSE[np.argmax(SSE)] = Kmean.inertia_
+            Kmean_store[np.argmax(SSE)] = Kmean
+
+    return Kmean_store, SSE
+
+
 # Discrimination Distance for k-means
-def Kmeans_discrim(df, method='average'):
-    """Gives a measure of the normalized distance that a group of samples (same label) is from all other samples in k-means clustering.
+def Kmeans_discrim(df, method='average', iter_num=1, best_fraction=0.1):
+    """Gives measure of the normalized distance that a group of samples (same label) is from all other samples in k-means clustering.
 
-       This function performs a k-means clustering with the default parameters of sklearn.cluster.KMeans except the number of clusters
-    (equal to the number of unique labels of the spectra). It then checks each of the clusters formed to see if only the samples of a
-    label/group are present and if all of them are present. If a group doesn't fulfill the conditions, a distance of zero is given to
-    that set of labels. If it fulfills them, the distance is calculated as the distance between the centroid of the samples cluster
-    and the closest centroid. The distance is normalized by dividing it by the maximum distance between any 2 cluster centroids. It then
-    returns the mean/median of the discrimination distances of all groups and a dictionary with each individual discrimination distance.
+       This function performs n k-means clustering with the default parameters of sklearn.cluster.KMeans except the number of clusters
+    (equal to the number of unique labels of the spectra). For a chosen x% of the best clusterings (based on their SSE), it checks each
+    of the clusters formed to see if only and all the samples of a label/group are present. If not, a distance of zero is given to that
+    set of labels. If yes, the distance is the distance between the centroid of the samples cluster and the closest centroid normalized
+    by the maximum distance between any 2 cluster centroids. It then returns the mean/median of the discrimination distances of all
+    groups, a dictionary with each individual discrimination distance, the Rand Index of the clustering and the Kmeans SSE.
 
-    df: Pandas DataFrame.
-    method: str (default: "average"); Available methods - "average", "median". This is the method to give the
+       df: Pandas DataFrame.
+       method: str (default: "average"); Available methods - "average", "median". This is the method to give the
     normalized discrimination distance measure based on the distances calculated for each set of samples.
+       iter_num: integer; number of different iterations of k-means clustering to perform.
+       best_fraction: scalar; fraction of the best Clusterings (based on their SSE) to return.
 
-    Returns: (scalar, dictionary); discrimination distance measure, dictionary with the discrimination distance for each set of 
-    samples.
+       returns: dictionary; dictionary with each key representing a k-means clustering with 4 results each: discrimination distance
+    measure, dictionary with the discrimination distance for each set of samples, Rand Index and SSE.
     """
     # Application of the K-means clustering with n_clusters equal to the number of unique labels.
 
@@ -188,45 +224,55 @@ def Kmeans_discrim(df, method='average'):
     n_labels = len(unique_labels)
     sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
 
-    Kmean2 = skclust.KMeans(n_clusters=n_labels)
-    Kmean = Kmean2.fit(dfdata.data_matrix)
+    # Performing K-means clustering iter-num times and returning the best_fraction of them (int(iter_num*best_fraction)+1)
+    Kmean_store, SSE = Kmeans(dfdata, n_labels, iter_num, best_fraction)
 
-    Correct_Groupings = {label: 0 for label in unique_labels}
+    Results_store = {}
 
-    # Creating dictionary with number of samples for each group
+    for num in range(len(Kmean_store)):
+        Kmean = Kmean_store[num]
 
-    # Making a matrix with the pairwise distances between any 2 clusters.
-    distc = dist.pdist(Kmean.cluster_centers_)
-    distma = dist.squareform(distc)
-    maxi = max(distc)  # maximum distance (to normalize discrimination distancces).
+        # Creating dictionary with number of samples for each group
+        Correct_Groupings = {label: 0 for label in unique_labels}
+        # Making a matrix with the pairwise distances between any 2 clusters.
+        distc = dist.pdist(Kmean.cluster_centers_)
+        distma = dist.squareform(distc)
+        # maximum distance (to normalize discrimination distancces).
+        maxi = max(distc)
 
-    # Check if the two conditions are met (all samples in one cluster and only them)
-    # Then calculate discrimination distance.
-    for i in unique_labels:
-        if (Kmean.labels_ == Kmean.labels_[all_labels.index(i)]).sum() == sample_number[
-            i
-        ]:
-            Correct_Groupings[i] = (
-                min(
-                    distma[Kmean.labels_[all_labels.index(i)], :][distma[Kmean.labels_[all_labels.index(i)], :] != 0
-                    ]
+        # Check if the two conditions are met (all samples in one cluster and only them)
+        # Then calculate discrimination distance.
+        for i in unique_labels:
+            if (Kmean.labels_ == Kmean.labels_[all_labels.index(i)]).sum() == sample_number[
+                i
+            ]:
+                Correct_Groupings[i] = (
+                    min(
+                        distma[Kmean.labels_[all_labels.index(i)], :][distma[Kmean.labels_[all_labels.index(i)], :] != 0
+                                                                      ]
+                    )
+                    / maxi
                 )
-                / maxi
-            )
 
-    # Method to quantify a measure of a global discriminating distance for k-means clustering.
-    if method == 'average':
-        Correct_Groupings_M = np.array(list(Correct_Groupings.values())).mean()
-    elif method == 'median':
-        Correct_Groupings_M = np.median(list(Correct_Groupings.values()))
-        if Correct_Groupings_M == 0:
-            Correct_Groupings_M = None
-    else:
-        raise ValueError(
-            'Method not recognized. Available methods: "average", "median".'
-        )
+        # Method to quantify a measure of a global discriminating distance for k-means clustering.
+        if method == 'average':
+            Correct_Groupings_M = np.array(
+                list(Correct_Groupings.values())).mean()
+        elif method == 'median':
+            Correct_Groupings_M = np.median(list(Correct_Groupings.values()))
+            if Correct_Groupings_M == 0:
+                Correct_Groupings_M = None
+        else:
+            raise ValueError(
+                'Method not recognized. Available methods: "average", "median".')
 
-    return Correct_Groupings_M, Correct_Groupings
+        rand_index = adjusted_rand_score(all_labels, Kmean.labels_) # Rand index
+
+        # Results_store['Correct_Groupings_M'] =
+        # Store results in the dictionary
+        Results_store[num] = Correct_Groupings_M, Correct_Groupings, rand_index, SSE[num]
+
+    return Results_store
 
 
 # SMOTE oversampling method
@@ -307,7 +353,7 @@ def fast_SMOTE(df, binary=False, max_sample=0):
                 rd.sample(
                     list(
                         Newdata.columns[
-                            n_all_labels + loca : n_all_labels + loca + nnew[i]
+                            n_all_labels + loca: n_all_labels + loca + nnew[i]
                         ]
                     ),
                     n_choose,
@@ -381,7 +427,7 @@ def simple_RF(df, iter_num=20, n_fold=3, n_trees=200):
             f = f + 1
 
         cv.append(np.mean(CV))
-    
+
     # Join and order all important features values from each random forest
     imp_feat_sum = imp_feat.sum(axis=0) / (iter_num * n_fold)
     sorted_imp_feat = sorted(enumerate(imp_feat_sum), key=lambda x: x[1], reverse=True)
@@ -481,7 +527,7 @@ def RF_M4(df, reffeat, iter_num=20, test_size=0.1, n_trees=200):
         glog_S = trans.glog(Norm_S)
         Euc_glog_S = trans.pareto_scale(glog_S)
         X_train = Euc_glog_S.data.iloc[:, : -len(y_test)]
-        X_test = Euc_glog_S.data.iloc[:, -len(y_test) :]
+        X_test = Euc_glog_S.data.iloc[:, -len(y_test):]
 
         # Random Forest setup and fit.
         rf = skensemble.RandomForestClassifier(n_estimators=n_trees)
@@ -609,7 +655,7 @@ def permutation_RF(df, iter_num=100, n_fold=3, n_trees=200):
 # Function to calculate a correlation coefficient between 2 different hierarchical clusterings/ dendrograms.
 def Dendrogram_Sim(Z, zdist, Y, ydist, type='cophenetic', Trace=False):
     """Calculates a correlation coefficient between 2 dendograms based on their distances and hierarchical clustering performed.
-    
+
        Z: ndarray; linkage matrix of hierarchical clustering 1.
        zdist: ndarray; return of the distance function in scypy.spatial.distance for hierarchical clustering 1.
        Y: ndarray; linkage matrix of hierarchical clustering 2.
@@ -617,7 +663,7 @@ def Dendrogram_Sim(Z, zdist, Y, ydist, type='cophenetic', Trace=False):
        simtype: string (default - 'cophenetic'); types of correlation coefficient metrics to use; accepted: {'Baker Kendall', 'Baker 
     Spearman', 'cophenetic'}.
        Trace: bool (default - False); gives a report of the correlation coefficient.
-       
+
        Returns: (float, float); correlation coefficient of specified type and respective p-value.
     """
 
@@ -667,7 +713,7 @@ def Dendrogram_Sim(Z, zdist, Y, ydist, type='cophenetic', Trace=False):
 # --------- PLS-DA functions ---------------------
 
 def PLSscores_with_labels(df, n_components, labels=None, scale=False, encode2as1vector=True):
-    
+
     # create label lists
     if labels is None:
         all_labels = list(df.cdl.labels)
@@ -679,7 +725,8 @@ def PLSscores_with_labels(df, n_components, labels=None, scale=False, encode2as1
 
     matrix = _generate_y_PLSDA(all_labels, unique_labels, is1vector)
 
-    plsda = PLSRegression(n_components=n_components, scale=scale) # Nº components here doesn't matter
+    # Nº components here doesn't matter
+    plsda = PLSRegression(n_components=n_components, scale=scale)
 
     #Fitting the model and getting the X_scores
     plsda.fit(X=df.T,Y=matrix)
@@ -687,6 +734,7 @@ def PLSscores_with_labels(df, n_components, labels=None, scale=False, encode2as1
     labels_col = pd.DataFrame(all_labels, columns=['Label'])
     LV_score = pd.concat([LV_score, labels_col], axis=1)
     return LV_score
+
 
 def _generate_y_PLSDA(all_labels, unique_labels, is1vector):
     if not is1vector:
@@ -698,9 +746,8 @@ def _generate_y_PLSDA(all_labels, unique_labels, is1vector):
         matrix = pd.get_dummies(all_labels)
         matrix = matrix[unique_labels]
         # use first column to encode
-        matrix = matrix.iloc[:, 0].values # a numpy array
+        matrix = matrix.iloc[:, 0].values  # a numpy array
     return matrix
-
 
 
 def optim_PLS(df, labels=None, encode2as1vector=True, max_comp=50, n_fold=3):
@@ -799,7 +846,7 @@ def model_PLSDA(df, n_comp,
                 encode2as1vector=True,
                 feat_type='Coef',
                 figures=False
-):
+                ):
     """Perform PLS-DA with n-fold cross-validation.
 
     df: pandas DataFrame; includes X equivalent in PLS-DA (training vectors).
@@ -847,7 +894,7 @@ def model_PLSDA(df, n_comp,
     for i in range(iter_num):
         # use startified n-fold cross-validation with shuffling
         kf = StratifiedKFold(n_fold, shuffle=True)
-        
+
         # Setting up storing variables for n-fold cross-validation
         nright = 0
         cv = []
@@ -964,7 +1011,7 @@ def permutation_PLSDA(df, n_comp, labels=None, n_fold=3, iter_num=100, figures=F
 
     # list of columns to shuffle and dataframe of the data to put columns in each NewC shuffled order
     NewC = list(df.columns.copy())
-    df = df.copy() # TODO: check if this copy is really necessary
+    df = df.copy()  # TODO: check if this copy is really necessary
 
     # create label lists
     if labels is None:
@@ -998,7 +1045,7 @@ def permutation_PLSDA(df, n_comp, labels=None, n_fold=3, iter_num=100, figures=F
             # plsda model building for each of the n stratified groups amde
             plsda = PLSRegression(n_components=n_comp, scale=False)
             X_train, X_test = (temp[temp.columns[train_index]].T,
-                              temp[temp.columns[test_index]].T)
+                               temp[temp.columns[test_index]].T)
             if not is1vector:
                 y_train, y_test = (
                     matrix.T[matrix.T.columns[train_index]].T,
@@ -1027,7 +1074,6 @@ def permutation_PLSDA(df, n_comp, labels=None, n_fold=3, iter_num=100, figures=F
                 for i in range(len(y_pred)):
                     if rounded[i] == correct[i]:
                         nright += 1  # Correct prediction
-
 
         # Calculate accuracy for this iteration
         Accuracy.append(nright / len(all_labels))
