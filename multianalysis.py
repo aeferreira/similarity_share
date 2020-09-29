@@ -127,6 +127,52 @@ def dist_discrim(df, Z, method='average'):
     return separaM, discrims
 
 
+def good_first_cluster_fraction(df, Z):
+    """Calculates the fraction of samples whose first cluster was with a cluster of samples with only the same label.
+
+       df: Pandas DataFrame.
+       Z: ndarray; hierarchical clustering linkage matrix (from scipy.cluster.hierarchical.linkage)
+
+       returns: scalar; fraction of samples who initial clustered with a cluster of samples with the same label."""
+
+    # Get metadata from df
+    unique_labels = df.cdl.unique_labels
+    all_labels = list(df.cdl.labels)
+    ns = len(df.cdl.samples)
+
+    # to_tree() returns root ClusterNode and ClusterNode list
+    _, cn_list = hier.to_tree(Z, rd=True)
+
+    # Create dictionary with number of samples per label
+    sample_number = {label: len(df.cdl.samples_of(label)) for label in unique_labels}
+    max_len = max(sample_number.values())
+
+    # To get the number of ood first cluster
+    good_cluster = 0
+
+    # Iterating through the samples
+    for i in range(ns):
+        # Get the iteration of HCA where the sample was first clustered with another cluster - itera
+        itera, _ = np.where(Z[:,:2] == i)
+        #print(itera, Z[2][itera, 1-pos])
+
+        # Length of cluster made and see if it is bigger than the label with the most samples (just to speed up calculation)
+        len_cluster = Z[itera,3]
+        #len_cluster = cn_list[ns + int(itera)].get_count()
+        if not (len_cluster <= max_len):
+            continue
+
+        # Get labels of the cluster itera and see if they are all the same
+        labelset = [all_labels[loc] for loc in cn_list[ns + int(itera)].pre_order(lambda x: x.id)]
+        # get first element
+        label0 = labelset[0]
+        if labelset.count(label0) == len_cluster:
+            # If they are, sample i's first cluster was good.
+            good_cluster = good_cluster + 1
+
+    return good_cluster/ns
+
+
 # Hierarchical Clustering - function necessary for calculation of Baker's Gamma Correlation Coefficient
 def mergerank(Z):
     """Creates a 'rank' of the iteration number two samples were linked to the same cluster.
