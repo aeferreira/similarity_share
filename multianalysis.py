@@ -289,16 +289,15 @@ def Kmeans_discrim(df, method='average', iter_num=1, best_fraction=0.1):
         # Check if the two conditions are met (all samples in one cluster and only them)
         # Then calculate discrimination distance.
         for i in unique_labels:
-            if (Kmean.labels_ == Kmean.labels_[all_labels.index(i)]).sum() == sample_number[
-                i
-            ]:
-                Correct_Groupings[i] = (
-                    min(
-                        distma[Kmean.labels_[all_labels.index(i)], :][distma[Kmean.labels_[all_labels.index(i)], :] != 0
-                                                                      ]
+            if (Kmean.labels_[np.where(dfdata.labels == i)] == Kmean.labels_[all_labels.index(i)]).sum() == sample_number[i]:
+                if (Kmean.labels_ == Kmean.labels_[all_labels.index(i)]).sum() == sample_number[i]:
+                    Correct_Groupings[i] = (
+                        min(
+                            distma[Kmean.labels_[all_labels.index(i)], :][distma[Kmean.labels_[all_labels.index(i)], :] != 0
+                                                                        ]
+                        )
+                        / maxi
                     )
-                    / maxi
-                )
 
         # Method to quantify a measure of a global discriminating distance for k-means clustering.
         if method == 'average':
