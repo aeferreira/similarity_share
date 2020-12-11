@@ -1,26 +1,38 @@
+# Needed imports
 import pandas as pd
 import metabolinks as mtl
 import metabolinks.transformations as trans
 import numpy as np
 
-"""Elimination of features with too many missing values, missing value estimation, normalization methods, generalized logarithmic
-transformation, reference feature estimation and centering and scaling methods."""
+"""Here are compiled the functions developed for traditional data pre-treatments in metabolomics data analysis workflow. The functions
+are split in the following sub-sections:
+- Feature Filtering: filtering features based on min. nº of samples they appear and imputation of missing values (NaN_Imputation).
+- Normalizations: Normalization by a reference feature (Norm_Feat), by the total sum of peaks (Norm_TotalInt), Probabilistic Quotient
+Normalization (Norm_PQN) and Quantile Normalization (Norm_Quantile).
+- Transformations: Generalized Logarithmic Transformation (glog).
+- Centering and Scaling: Pareto Scaling (ParetoScal), Mean Centering (MeanCentering), Auto Scaling (AutoScal), Range Scaling
+(RangeScal), Vast Scaling (VastScal) and Level Scaling (LevelScal)
+- Miscellaneous functions
 
+Some of these functions were then included in the transformations module of the metabolinks Python package and are applied here (now)
+by retrieving said functions from that module, namely NaN_Imputation (split into 2), Norm_Feat, glog and ParetoScal.
+"""
 
-### Missing Value Imputation and feature removal
-
+### ---------- Missing Value Imputation and Feature Filtering ----------
 def NaN_Imputation(df, minsample=0):
+    "Feature filtering (based on min. nº of samples they appear) and imputes remaining missing values (fraction of min. value in data)."
     df = trans.keep_atleast(df, min_samples=minsample)
     df = trans.fillna_frac_min(df, fraction=0.5)
     return df
 
-# ---------- Normalizations --------------
+
+### ---------- Normalizations --------------
 def Norm_Feat(df, Feat_mass, remove=True):
+    "Normalization of a dataset by a reference feature."
     return trans.normalize_ref_feature(df, Feat_mass, remove=remove)
 
 def Norm_TotalInt (df):
     """Normalization of a dataset by the total value per columns."""
-
     return df/df.sum(axis=0)
 
 # Needs double-checking
@@ -36,17 +48,19 @@ def Norm_PQN(df, ref_sample='mean'):
 
        Returns: Pandas DataFrame; normalized spectra.
     """
-    #"Building" the reference sample based on the input given
-    if ref_sample == 'mean': #Mean spectre of all samples
+    # "Building" the reference sample based on the input given
+    if ref_sample == 'mean': # Mean spectra of all samples
         ref_sample2 = df.T / df.mean(axis = 1)
-    elif ref_sample == 'median': #Median spectre of all samples
-        ref_sample2 = df.T/df.median(axis = 1)
-    elif ref_sample in df.columns: #Specified sample of the spectra. ('Label','Sample') if data is labeled
-        ref_sample2 = df.T/df.loc[:,ref_sample]
-    else: #Actual sample given
-        ref_sample2 = df.T/ref_sample
-    #Normalization Factor and Normalization
+    elif ref_sample == 'median': # Median spectra of all samples
+        ref_sample2 = df.T / df.median(axis = 1)
+    elif ref_sample in df.columns: # Specified sample of the spectra. ('Label','Sample') if data is labelled (multi index)
+        ref_sample2 = df.T / df.loc[:,ref_sample]
+    else: # Actual sample given
+        ref_sample2 = df.T / ref_sample
+
+    # Normalization Factor and Normalization
     Norm_fact = ref_sample2.median(axis=1)
+
     return df / Norm_fact
 
 
@@ -56,24 +70,24 @@ def Norm_Quantile(df, ref_type='mean'):
        Missing Values are temporarily replaced with 0 (and count as 0) until normalization is done. Quantile Normalization is more
     useful with no/low number of missing values.
 
-       Spectra: AlignedSpectra object (from metabolinks).
+       df: Pandas DataFrame.
        ref_type: str (default: 'mean'); reference sample to use in Quantile Normalization, types accepted: 'mean' (default,
     reference sample will be the means of the intensities of each rank), 'median' (reference sample will be the medians of the
     intensities for each rank).
 
-       Returns: AlignedSpectra object (from metabolinks); normalized spectra.
+       Returns: Pandas DataFrame; normalized spectra.
     """
-    #Setting up the temporary dataset with missing values replaced by zero and dataframes for the results
+    # Setting up the temporary dataset with missing values replaced by zero and dataframes for the results
     norm = df.copy().replace({np.nan:0})
     ref_spectra = df.copy()
     ranks = df.copy()
 
     for i in range(len(norm.columns)):
-        #Determining the ranks of each entry in the same row (same variable) in the dataset
+        # Determining the ranks of each entry in the same row (same variable) in the dataset
         ref_spectra.iloc[:,i] = norm.iloc[:,i].sort_values().values
         ranks.iloc[:,i] = norm.iloc[:,i].rank(na_option='top')
 
-    #Determining the reference sample for normalization based on the ref_type chosen (applied on the columns).
+    # Determining the reference sample for normalization based on the ref_type chosen (applied on the columns).
     if ref_type == 'mean':
         ref_sample = ref_spectra.mean(axis=1).values
     elif ref_type == 'median':
@@ -81,69 +95,72 @@ def Norm_Quantile(df, ref_type='mean'):
     else:
         raise ValueError('Type not recognized. Available ref_type: "mean", "median".')
 
-    #Replacing the values in the dataset for the reference sample values based on the rankscalculated  earlier for each entry
+    # Replacing the values in the dataset for the reference sample values based on the ranks calculated earlier for each entry
     for i in range(len(ranks)):
         for j in range(len(ranks.columns)):
             if ranks.iloc[i,j] == round(ranks.iloc[i,j]):
                 norm.iloc[i,j] = ref_sample[int(ranks.iloc[i,j])-1]
-            else: #in case the rank isn't an integer and ends in .5 (happens when a pair number of samples have the same
-                  #value in the same column - after ordering from lowest to highest values by row).
+            else: # in case the rank isn't an integer and ends in .5 (happens when a pair number of samples have the same
+                  # value in the same column - after ordering from lowest to highest values by row).
                 norm.iloc[i,j] = np.mean((ref_sample[int(ranks.iloc[i,j]-1.5)], ref_sample[int(ranks.iloc[i,j]-0.5)]))
 
-    #Replacing 0's by missing values and creating the AlignedSpectra object for the output
+    # Replacing 0s by missing values and creating the DataFrame for the output
     return norm.replace({0:np.nan})
 
 
-### Transformations
+### ---------- Transformations --------------
 def glog(df, lamb=None):
-    """Performs Generalized Logarithmic Transformation on a Spectra (same as MetaboAnalyst's transformation).
+    """Generalized Logarithmic Transformation on a dataset (same as MetaboAnalyst's transformation).
 
     df: Pandas DataFrame.
     lamb: scalar, optional (default: global minimum divided by 10); transformation parameter lambda.
 
-    Returns: DataFrame transformed as log2(y + (y**2 + lamb**2)**0.5)."""
+    Returns: Pandas DataFrame; Dataset transformed as log2(y + (y**2 + lamb**2)**0.5)."""
 
     return trans.glog(df, lamb=lamb)
 
-# Centering and Scalings (acomodates Missing Values)
 
+### ---------- Centering and Scalings --------------
+# (Accomodates Missing Values)
 def ParetoScal(df):
+    "Pareto Scaling of a dataset."
     return trans.pareto_scale(df)
 
 def MeanCentering(df):
-    """Performs Mean Centering.
+    """Mean Centering of a dataset.
 
        df: Pandas DataFrame. It can include missing values.
 
-       Returns: DataFrame; Mean Centered Spectra."""
+       Returns: Pandas DataFrame; Mean Centered Spectra."""
     return df.sub(df.mean(axis=1), axis=0)
 
 
 def AutoScal(df):
-    """Performs Autoscaling on an AlignedSpectra object.
+    """Autoscaling of a dataset.
+
+       This is x -> (x - mean(x)) / std(x) per feature.
 
        df: Pandas DataFrame. Can include missing values.
 
-       Returns: Pandas DataFrame; Auto Scaled Spectra.
-
-       This is x -> (x - mean(x)) / std(x) per feature"""
+       Returns: Pandas DataFrame; Auto Scaled Spectra."""
 
     # TODO: verify if the name of this transformation is "Standard scaling"
-    # TODO: most likely it is known by many names (scikit-learn has a SatndardScaler transformer)
+    # TODO: most likely it is known by many names (scikit-learn has a StandardScaler transformer)
     means = df.mean(axis=1)
     stds = df.std(axis=1)
     df2 = df.sub(means, axis=0).div(stds, axis=0)
     return df2
 
 def RangeScal(df):
-    """Performs Range Scaling on an AlignedSpectra object.
+    """Range Scaling of a dataset.
 
-       df: PAndas DataFrame. It can include missing values.
+       df: Pandas DataFrame. It can include missing values.
 
        Returns: Pandas DataFrame; Ranged Scaled Spectra."""
 
     scaled_aligned = df.copy()
     ranges = df.max(axis=1) - df.min(axis=1) # Defining range for every feature
+
     # Applying Range scaling to each feature
     for j in range(0, len(scaled_aligned)):
         if ranges.iloc[j] == 0: # No difference between max and min values
@@ -151,19 +168,20 @@ def RangeScal(df):
         else:
             scaled_aligned.iloc[j, :] = (df.iloc[j, ] - df.iloc[j, ].mean()) / ranges.iloc[j]
 
+    # Return scaled spectra
     return scaled_aligned
 
 
 def VastScal(df):
-    """Performs Vast Scaling on an AlignedSpectra object.
+    """Vast Scaling of a dataset.
 
-       df: PAndas DataFrame. It can include missing values.
+       df: Pandas DataFrame. It can include missing values.
 
        Returns: Pandas DataFrame; Vast Scaled Spectra."""
 
-    # scaled_aligned = df.copy()
     std = df.std(axis=1)
     mean = df.mean(axis=1)
+
     # Applying Vast Scaling to each feature
     scaled_aligned = (((df.T - mean)/std)/(mean/std)).T
 
@@ -172,15 +190,18 @@ def VastScal(df):
 
 
 def LevelScal(df, average=True):
-    """Performs Level Scaling on a DataFrame. (See van den Berg et al., 2006).
+    """Level Scaling of a dataset.
 
-    df: Pandas dataFrame. It can include missing values.
+    Level Scaling made as presented in van den Berg et al., 2006.
+
+    df: Pandas DataFrame. It can include missing values.
     average: bool (Default - True); if True mean-centered data is divided by the mean spectra, if False it is divided by the median
     spectra.
 
     Returns: Pandas DataFrame; Level Scaled Spectra."""
 
     mean = df.mean(axis=1)
+
     # Applying Level Scaling to each feature
     if average == True:
         scaled_aligned = ((df.T - mean)/mean).T
@@ -193,16 +214,17 @@ def LevelScal(df, average=True):
     return scaled_aligned
 
 
-### Miscellaneous
+### ---------- Miscellaneous --------------
 def search_for_ref_feat(df, approx_mass):
-    """Estimates a peak m/z to be the reference feature. 
+    """Estimates a peak m/z to be the reference feature in a mass spectrometry dataset.
 
-       df: DataFrame.
+       df: Pandas DataFrame.
        approx_mass: scalar, approximate mass of the reference feature to search for.
 
-       Return: scalar, scalar; peak m/z that is estimated to belong to the reference feature (must be present in all samples,
-    must be at a max length of 1 m/z of the approximate mass given) - the scalar returned is the closest peak that fulfills 
-    these two conditios; m/z difference of approximate m/z and estimated m/z.
+       Return: (ref_feat, dist)
+        ref_feat: scalar; peak m/z that is estimated to belong to the reference feature (must be present in all samples, must be at a max
+    distance of 1 m/z of the approximate mass given) - the scalar returned is the closest peak that fulfills these two conditios.
+        dist: scalar, m/z difference of approximate m/z and estimated m/z.
     """
     # Condition 1: Be at a max length of 1 of the approximate mass given.
     rest1 = df.index[df.index < approx_mass + 1]
@@ -229,7 +251,7 @@ def search_for_ref_feat(df, approx_mass):
 
         return feat_est[mass_diff.index(min(mass_diff))], min(mass_diff)
 
-
+# Outdated
 def spectra_proc(df, minsample=0, Feat_mass=None, remove=True, do_glog=False, lamb=None, Pareto=True):
     """Performs any combination of Missing Value Imputation, Normalization by a reference feature, Generalized Logarithmic 
     Transformation and Pareto Scaling of the dataset.
@@ -248,18 +270,20 @@ def spectra_proc(df, minsample=0, Feat_mass=None, remove=True, do_glog=False, la
 
        Pareto: bool (default - True); if True performs Pareto Scaling.
 
-       Returns: Processed DataFrame.
+       Returns: Processed Pandas DataFrame.
     """
-    if minsample != 100: #Missing Value Imputation
+    if minsample != 100: # Missing Value Imputation
         df = NaN_Imputation(df, minsample)
 
-    if Feat_mass is not None: #Normalization by a reference feature
+    if Feat_mass is not None: # Normalization by a reference feature
         df = Norm_Feat(df, Feat_mass, remove=remove)
 
-    if do_glog: #glog transformation
+    if do_glog: # glog transformation
         df = glog(df, lamb)
 
-    if Pareto: #Pareto Scaling
+    if Pareto: # Pareto Scaling
         df = ParetoScal(df)
+
+    # Return treated dataset
     return df
 
