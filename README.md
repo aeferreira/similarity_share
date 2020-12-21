@@ -65,7 +65,7 @@ These notebooks perform the same data analysis (multivariate statistical methods
 
 Information for Fig 3.7 to Fig 3.10, Suppl. Fig. 6.9 to Suppl. Fig. 6.12, Table 2.2, Table 3.4 to Table 3.7, Suppl. Table 6.3.
 
-#### Mass-Difference Networks (MDiNs)
+#### Mass-Difference Networks (MDiNs) - 'MDiN_data' folder
 
 Full MDiNs were built with MetaNetter 2.0 plugin of Cytoscape using either the transformation list (TF) made and discussed in Sample_MDiNs_Yeast.ipynb or the transformation list of MetaNetter (MN) under same restrictions as explained in the same notebook. The files that contain the networks are:
 
