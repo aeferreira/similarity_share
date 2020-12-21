@@ -65,9 +65,9 @@ These notebooks perform the same data analysis (multivariate statistical methods
 
 Information for Fig 3.7 to Fig 3.10, Suppl. Fig. 6.9 to Suppl. Fig. 6.12, Table 2.2, Table 3.4 to Table 3.7, Suppl. Table 6.3.
 
-#### Mass-Difference Networks (MDiNs) - 'MDiN_data' folder
+#### Mass-Difference Networks (MDiNs) - 'MDiN_data' folder (see folder for more details)
 
-Full MDiNs were built with MetaNetter 2.0 plugin of Cytoscape using either the transformation list (TF) made and discussed in Sample_MDiNs_Yeast.ipynb or the transformation list of MetaNetter (MN) under same restrictions as explained in the same notebook. The files that contain the networks are:
+Full MDiNs were built with MetaNetter 2.0 plugin of Cytoscape using either our transformation list (TF) made and discussed in Sample_MDiNs_Yeast.ipynb or the transformation list of MetaNetter (MN) under some restrictions as explained in the same notebook. The files that contain the networks are:
 
 - Net_YD_TF.graphml - Full Yeast dataset MDiN built with our transformation list.
 - Net_YD_MN.graphml - Full Yeast dataset MDiN built with MetaNetter's transformation list.
@@ -87,7 +87,7 @@ Full MDiNs were built with MetaNetter 2.0 plugin of Cytoscape using either the t
 - test_multianalysis.py - very few tests to see if some of the developed metrics are obtaining the results we want (scarce tests).
 
 Note:
-- MetAnalyst folder - has an example dataset file present in MetaboAnalyst and multiple files of this dataset after specific pre-treatments (to compare their application of pre-treatments with the one in scaling.py).
+- 'MetAnalyst' folder - has an example dataset file present in MetaboAnalyst and multiple files of this dataset after specific pre-treatments (to compare their application of pre-treatments with the one in scaling.py) - see folder for more details on the files.
 - MetAnalyst_Example.ipynb - a few more tests to observe if the treatments are being correctly applied like test_scaling.py.
 
 ### Other Notebook that has information for figure in the dissertation
@@ -101,7 +101,7 @@ Note:
 
 
 - FormGeneration_Assignment.ipynb - This notebook contains an algorithm to build a database of possible formulas in a specific m/z interval (according to some of the parameters that can be changed) and an algorithm to assign formulas from this database to a list of neutral masses (also parameters than can be changed - 3 different variants of the algorithm) that are then compared to the Formulas assignment made in a freely available software 'Formularity' (available here: https://omics.pnl.gov/software/formularity). The files used were neutral mass lists as obtained from the Formularity software (after formula assignment) to facilitate formula assignment comparison. These were in the following folder:
-- 'Formularity_data' folder - folder with multiple files (use of different parameters in the Assignment by Formularity) obtained from the Formularity software either from replicate nº 1 of BY4741 strain of the Yeast dataset or the example file provided by Formularity.
+- 'Formularity_data' folder - folder with multiple files (use of different parameters in the Assignment by Formularity) obtained from the Formularity software either from the list of masses of replicate nº 1 (sample 14) of the CAN grapevine variety obtained in negative mode - 'CAN (14, 15, 16).xlsx' on the 'data' folder (not present in the repository) - or the example file provided by Formularity - see folder for more details on the files.
 
 
 - Form_ratio_test(Needs files to run).ipynb - this is an auxiliary notebook to FormGeneration_Assignment.ipynb to observe the most common ratios (certain element number of atoms to carbon atoms in a formula/metabolite) in a database to add as an additional criterion (stricter elemental ratios) in the formula assignment algorithm. The database used was ChEBI (https://www.ebi.ac.uk/chebi/). As the name suggests, this notebook doesn't run without the specific files from CHEBI (explained in the notebook), which aren't present in the repository due to their size.
