@@ -22,22 +22,22 @@ The main datasets used for this analyses were called the Negative and Positive G
 
 ### BinSim (and traditional pre-treatments) analysis of the Grapevine and Yeast Datasets
 
-These notebooks perform data analysis thorugh different multivariate statistical methods of specific datasets (presented in the dissertation) after specific data pre-treatments: Binary Similarity (BinSim) or some combinations of more established and traditional pre-treatments (compare the results between these).
+These notebooks perform data analysis through different multivariate statistical methods of specific datasets (presented in the dissertation) after specific data pre-treatments: Binary Similarity (BinSim) or some combinations of more established and traditional pre-treatments (compare the results between these).
 
 - BinSim_Analysis_GD11_all2_groups2all1.ipynb - (BinSim and traditional treatments) Data Analysis of the Negative and Positive Grapevine Datasets.
 - BinSim_Analysis_YD_notnorm.ipynb - (BinSim and traditional treatments) Data Analysis of the Yeast and Yeast Formula Datasets.
 
 Information for Fig 3.1 to Fig 3.6, Suppl. Fig. 6.1 to Suppl. Fig. 6.8, Table 3.1 to Table 3.3, Suppl. Table 6.1 and 6.2. Also, base for Fig. 1.1, Fig. 1.3, Fig. 2.2.
 
-Note: Ahead of the GD11 and YD name of the files, it is an indication of the pre-processing done to the datasets that will be analysed. Explanation of the pre-processing is done in the notebooks (first file has 2 different pre-processed set of datasets - 'all2' represents the one used in the dissertation). The analysis done in these notebooks is replicated for the datasets pre-processed in different ways - see 'Other BinSim analysis on Grapevine and Yeast datasets' section.
+Note: Ahead of the GD11 and YD name of the files, it is an indication of the pre-processing done to the datasets that will be analysed. Explanation of the pre-processing is done in the notebooks (first file has 2 different pre-processed set of datasets - 'all2' represents the one used in the dissertation). The analysis done in these notebooks is replicated for the datasets pre-processed in different ways - see 'Other BinSim analyses on Grapevine and Yeast datasets' section.
 
 #### Data Files and Dataset Construction
 
 ##### Obtaining the Grapevine Datasets
 
-The Negative and Positive Grapevine Datasets were obtained with the peak_alignment.ipynb from each grapevine sample information in the 'data' folder. The different peak alignments and peak filterings done using the `align` function and stores in hdf stores. The different ways alignment and filtering were performed is explained in peak_alignment.ipynb as well as the nomenclature given to each alignment and filtering.
+The Negative and Positive Grapevine Datasets were obtained with the peak_alignment.ipynb from each grapevine sample information in the 'data' folder. The different peak alignments and peak filtering done using the `align` function and stores in hdf stores. The different ways alignment and filtering were performed is explained in peak_alignment.ipynb as well as the nomenclature given to each alignment and filtering.
 
-- peak_alignment.ipynb - aligns and filters (based on two parameters) the grapevine samples using the `align` function from metabolinks, explains the alignments and filterings as well as the nomenclature given.
+- peak_alignment.ipynb - aligns and filters (based on two parameters) the grapevine samples using the `align` function from metabolinks, explains the alignments and filtering as well as the nomenclature given.
 - 'data' folder (not currently in repository) - has all the mass lists, intensity and metadata for each grapevine sample (in negative and positive modes).
 
 Stores:
@@ -51,7 +51,7 @@ Note:
 
 ##### Yeast Datasets
 
-The Yeast Datasets were obtained from the MetaboScape 4.0 software (Bruker Daltonics). The main difference between the files is that one was not normalized by Metaboscape (used in the dissertation) and the other was. Other parameters used are described in the respective notebooks.
+The Yeast Datasets were obtained from the MetaboScape 4.0 software (Bruker Daltonics). The main difference between the files is that one was not normalized by MetaboScape (used in the dissertation) and the other was. Other parameters used are described in the respective notebooks.
 
 - 5yeasts_notnorm.csv - Yeast Dataset not normalized by MetaboScape.
 - 5yeasts_norm.csv - Yeast Dataset normalized by MetaboScape (see use in the 'Other BinSim analysis on Grapevine and Yeast datasets' section - BinSim_YD_norm.ipynb).
@@ -83,11 +83,11 @@ Full MDiNs were built with MetaNetter 2.0 plugin of Cytoscape using either our t
 - multianalysis.py - has multiple functions for the application of multivariate analysis methods (from scikit-learn Python package) in the specific ways we want and extracting the results we want. Development of some evaluation metrics for clustering techniques.
 
 
-- test_scaling.py - tests to observe if the treatments are being correctly applied by comparing with the treatments made in MetaboAnalyst software based on an example file from this software.
+- test_scaling.py - tests to observe if the treatments are being correctly applied by comparing with the treatments made in MetaboAnalyst 4.0 software based on an example file from this software.
 - test_multianalysis.py - very few tests to see if some of the developed metrics are obtaining the results we want (scarce tests).
 
 Note:
-- 'MetAnalyst' folder - has an example dataset file present in MetaboAnalyst and multiple files of this dataset after specific pre-treatments (to compare their application of pre-treatments with the one in scaling.py) - see folder for more details on the files.
+- 'MetAnalyst' folder - has an example dataset file present in MetaboAnalyst 4.0 and multiple files of this dataset after specific pre-treatments (to compare their application of pre-treatments with the one in scaling.py) - see folder for more details on the files.
 - MetAnalyst_Example.ipynb - a few more tests to observe if the treatments are being correctly applied like test_scaling.py.
 
 ### Other Notebook that has information for figure in the dissertation
@@ -108,11 +108,11 @@ Note:
 
 ## Other BinSim analyses notebooks
 
-### Other BinSim analyses on Grapevine and Yeast datasets (different pre-processings)
+### Other BinSim analyses on Grapevine and Yeast datasets (different pre-processing)
 
 The other alignments of the Negative and Positive Grapevine Datasets in the hdf stores were analysed in these notebooks and the Yeast Dataset normalized MetaboScape also was. Furthermore, one of these notebooks marked as old is an older version of another of the notebooks, since the latter (that is more recent) used to analyse datasets that are no longer present in the repository.
 
-##### This analysis was very similar to BinSim_Analysis_GD11_all2_groups2all1.ipynb and BinSim_Analysis_YD_notnorm.ipynb that are more well organized and commented to follow the analysis. Some parameters in the latter were improved to ameliorate the figures and the analysis which weren't applied in these other notebooks. Thus, we recommend to see the better commented and organized notebooks first. These notebooks don't have the 'Analysis' on the name to separate them.
+##### This analysis was very similar to BinSim_Analysis_GD11_all2_groups2all1.ipynb and BinSim_Analysis_YD_notnorm.ipynb that are more commented and is, therefore, easier to follow the analysis. Thus, we recommend to see the better commented and organized notebooks first. These notebooks don't have the 'Analysis' on the name to separate them.
 
 - BinSim_GD11_g2all1_groups3all1.ipynb
 

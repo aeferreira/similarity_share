@@ -31,7 +31,7 @@ This folder contain the example from MetaboAnalyst 4.0 used in comparing the pre
 - MetAna_ngp.csv - Normalization by a reference feature ('301/2791.68'), Generalized Logarithmic Transformation and Pareto Scaling was applied.
 
 
-##### Note: Missing Value Imputation by half of the minimum value in the dataset is no longer available at MetaboAnalyst 4.0, so the exact analysis to obtain this files can't be replicated there.
+##### Note: Missing Value Imputation by half of the minimum value in the dataset is no longer available at MetaboAnalyst 4.0, so the exact analysis to obtain these files can't be replicated there.
 
 MetaboAnalyst 4.0 reference: Chong J, Wishart DS, Xia J. Using MetaboAnalyst 4.0 for Comprehensive and Integrative Metabolomics Data Analysis. Curr Protoc Bioinforma. 2019;68(1):e86. doi:https://doi.org/10.1002/cpbi.86
 

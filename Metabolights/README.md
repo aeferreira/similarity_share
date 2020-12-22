@@ -17,7 +17,7 @@ MetaboLights Repository link: https://www.ebi.ac.uk/metabolights/MTBLS797
 - m_mtbls629_NEG_mass_spectrometry_v2_maf.tsv - RPLC-ESI-QTOF-MS
 - m_mtbls629_POS_mass_spectrometry_v2_maf.tsv - RPLC-ESI-QTOF-MS
 
-Four groups of thioglycollate-induced peritoneal macrohpages with five biological replicates each (n = 20): Ctrl (peritoneal lavage pelleted cells immediately snap-frozen in liquid nitrogen upon isolation); Ab - Antibody (peritoneal macrophages subjected to immunostaining and subsequently stored in liquid N2 without sorting); Sort (freshly isolated macrophages immediately analyzed by flow cytometry without ab labeling and with sorting of the complete cell pop. into the collection tube); and Ab+Sort (freshly isolated cells immunostained and then sorted by flow cytometry, with collection of the complete cell population).
+Four groups of thioglycollate-induced peritoneal macrophages with five biological replicates each (n = 20): Ctrl (peritoneal lavage pelleted cells immediately snap-frozen in liquid nitrogen upon isolation); Ab - Antibody (peritoneal macrophages subjected to immunostaining and subsequently stored in liquid N2 without sorting); Sort (freshly isolated macrophages immediately analyzed by flow cytometry without ab labelling and with sorting of the complete cell pop. into the collection tube); and Ab+Sort (freshly isolated cells immunostained and then sorted by flow cytometry, with collection of the complete cell population).
 
 Paper: Binek A, Rojo D, Godzien J, et al. Flow Cytometry Has a Significant Impact on the Cellular Metabolome. J Proteome Res. 2019;18(1):169-181. doi:10.1021/acs.jproteome.8b00472
 
