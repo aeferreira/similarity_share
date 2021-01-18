@@ -6,7 +6,29 @@ This repository contains all the datasets, data analysis, figures and informatio
 
 Furthermore, it also contains some of the peripheral work done during this year that helped the dissertation and was ultimately not included in the final version of the dissertation.
 
-Here, we will present how this repository is organized and what is present in each file. Most files are: data, jupyter notebooks or small Python scripts auxiliary to notebooks.
+Here, we will present the requirements for the files in the repository as well as how it is organized and what is present in each file. Most files are: data, jupyter notebooks or small Python scripts auxiliary to notebooks.
+
+# Requirements for the repository
+
+It is highly recommended the installation of Anaconda with powerful scientific packages pre-installed:
+
+- `Anaconda <https://store.continuum.io/cshop/anaconda/>`_ (or `Miniconda <http://conda.pydata.org/miniconda.html>`_ followed by the necessary ``conda install``'s).
+
+#### The requirements for the files in this repository are:
+
+- Python 3.4 and above at least (not tested with lower Python versions).
+- `numpy`, `pandas`, `scipy`, `seaborn`, `scikit-learn`, `matplotlib`, `networkx`, `itertools` (from the Anaconda distribution).
+- `metabolinks` (requires manual installation) - fundamental to most Jupyter Notebooks.
+- `netlsd` (requires manual installation).
+- `Jupyter` platform is also highly recommended since most of the development was made in Jupyter Notebooks.
+
+These other Python packages that are present in the Anaconda distribution were also used at some points:
+
+- `random`.
+- `joblib`, `sys`.
+- `colorsys`, `elips`.
+- `collections`, `pathlib`.
+- `re`.
 
 # Organization of the repository - File by file
 
